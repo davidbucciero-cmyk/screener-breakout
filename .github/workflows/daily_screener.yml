@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
+    env:
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -21,7 +24,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install pandas requests yfinance openbb
+        run: pip install pandas requests yfinance openbb beautifulsoup4
 
       - name: Run pipeline
         run: python run_all.py
