@@ -38,6 +38,10 @@ def main():
     import step5_scoring
     step5_scoring.run()
 
+    log.info('STEP 8 - Dashboard HTML...')
+    import step8_dashboard
+    step8_dashboard.run()
+
     log.info('=' * 60)
     log.info('PIPELINE COMPLET')
 
