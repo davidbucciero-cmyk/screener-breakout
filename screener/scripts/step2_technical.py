@@ -52,7 +52,7 @@ def compute_signals(ticker, data):
         bb_squeeze = 1 if bb_width.iloc[-1] <= bb_width_min.iloc[-1] * 1.05 else 0
         tr = pd.concat([high - low, abs(high - close.shift(1)), abs(low - close.shift(1))], axis=1).max(axis=1)
         atr14 = tr.rolling(14).mean()
-        atr_declining = 1 if atr14.iloc[-1] < atr14.iloc[-10] else 0
+        atr_declining = 1 if atr14.iloc[-1] > atr14.iloc[-10] else 0
         recent_high = close.tail(20).max()
         recent_low = close.tail(20).min()
         flat_base = 1 if (recent_high - recent_low) / recent_low < 0.15 else 0
@@ -62,7 +62,7 @@ def compute_signals(ticker, data):
         clv = ((close - low) - (high - close)) / (high - low + 1e-9)
         ad = (clv * volume).cumsum()
         ad_trend = 1 if ad.iloc[-1] > ad.rolling(20).mean().iloc[-1] else 0
-        score = obv_trend + (1 if vol_ratio > 1.5 else 0) + vol_dryup + bb_squeeze + atr_declining + flat_base + higher_lows + ad_trend
+        score = obv_trend + (1 if vol_ratio > 1.5 else 0) + vol_dryup + bb_squeeze + atr_declining + flat_base + (higher_lows * 2) + (ad_trend * 2)
         return {'ticker': ticker, 'obv_trend': obv_trend, 'vol_ratio': round(vol_ratio, 2), 'vol_dryup': vol_dryup, 'bb_squeeze': bb_squeeze, 'atr_declining': atr_declining, 'flat_base': flat_base, 'higher_lows': higher_lows, 'ad_trend': ad_trend, 'rs_line': 0, 'technical_score': score, 'updated_at': datetime.now().isoformat()}
     except Exception as e:
         log.debug(f'Erreur {ticker} : {e}')
@@ -115,7 +115,7 @@ def run():
     conn.close()
     log.info(f'Signaux sauvegardes : {len(df)} tickers')
     log.info(f'Score moyen : {df["technical_score"].mean():.1f}/10')
-    top10 = df.nlargest(10, 'technical_score')[['ticker', 'technical_score', 'flat_base', 'bb_squeeze', 'obv_trend']]
+    top10 = df.nlargest(10, 'technical_score')[['ticker', 'technical_score', 'flat_base', 'bb_squeeze', 'obv_trend', 'ad_trend', 'higher_lows']]
     log.info(f'Top 10 :\n{top10.to_string()}')
     return df
 

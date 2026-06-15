@@ -17,7 +17,7 @@ SCORE_THRESHOLD = 6
 EMAIL_FROM = 'david.bucciero@outlook.fr'
 EMAIL_TO = 'david.bucciero@outlook.fr'
 EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
-WEIGHTS = {'technical': 0.30, 'insider': 0.25, 'fundamental': 0.25, 'short': 0.15, 'reddit': 0.05}
+WEIGHTS = {'technical': 0.40, 'insider': 0.20, 'fundamental': 0.20, 'short': 0.15, 'reddit': 0.05}
 
 def load_all_signals():
     conn = sqlite3.connect(DB_PATH)
