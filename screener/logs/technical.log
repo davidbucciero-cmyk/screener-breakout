@@ -1,0 +1,23 @@
+2026-06-15 14:38:55,292 | INFO | ============================================================
+2026-06-15 14:38:55,292 | INFO | STEP 2 - SIGNAUX TECHNIQUES
+2026-06-15 14:38:55,293 | INFO | ============================================================
+2026-06-15 14:38:55,295 | INFO | Univers charge : 161 tickers
+2026-06-15 14:38:55,298 | INFO | Download IWM...
+2026-06-15 14:38:57,612 | INFO | Batch 1/4
+2026-06-15 14:39:00,976 | INFO | Batch 2/4
+2026-06-15 14:39:03,912 | INFO | Batch 3/4
+2026-06-15 14:39:06,527 | INFO | Batch 4/4
+2026-06-15 14:39:07,230 | INFO | Signaux sauvegardes : 161 tickers
+2026-06-15 14:39:07,231 | INFO | Score moyen : 2.3/10
+2026-06-15 14:39:07,238 | INFO | Top 10 :
+    ticker  technical_score  flat_base  bb_squeeze  obv_trend
+35    HBNC                5          1           0          1
+119   BCAT                5          1           0          1
+129     KW                5          1           0          0
+145   VSTS                5          1           0          1
+0    SENEA                4          0           0          1
+14    HCSG                4          1           0          1
+15   LILAK                4          1           0          1
+18    HLIT                4          0           0          1
+23    ADAM                4          1           0          1
+34    CFFN                4          1           0          1
