@@ -13,7 +13,7 @@ os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s', handlers=[logging.FileHandler(LOG_PATH), logging.StreamHandler()])
 log = logging.getLogger(__name__)
 
-SCORE_THRESHOLD = 3
+SCORE_THRESHOLD = 6
 EMAIL_FROM = 'david.bucciero@outlook.fr'
 EMAIL_TO = 'david.bucciero@outlook.fr'
 EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
