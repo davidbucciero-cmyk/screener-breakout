@@ -1,0 +1,28 @@
+2026-06-15 23:59:31,742 | INFO | ============================================================
+2026-06-15 23:59:31,743 | INFO | STEP 9 - IC SCORING
+2026-06-15 23:59:31,743 | INFO | ============================================================
+2026-06-15 23:59:31,787 | INFO | Calcul rendements forward 20j...
+2026-06-15 23:59:38,684 | INFO | Rendements calcules : 161 tickers
+2026-06-15 23:59:38,751 | INFO | 
+=== SIGNAUX SIGNIFICATIFS ===
+2026-06-15 23:59:38,758 | INFO | 
+                signal      IC  p_value interpretation
+4             ad_trend  0.5206   0.0000           Fort
+6      technical_score  0.4231   0.0000           Fort
+3          higher_lows  0.2471   0.0016           Fort
+10         final_score  0.1847   0.0190           Fort
+7   gross_margin_trend -0.1713   0.0298           Fort
+2        atr_declining -0.2904   0.0002           Fort
+2026-06-15 23:59:38,758 | INFO | 
+=== RECOMMANDATIONS ===
+2026-06-15 23:59:38,759 | INFO | GARDER et surponderer : ad_trend (IC=+0.5206)
+2026-06-15 23:59:38,760 | INFO | GARDER et surponderer : technical_score (IC=+0.4231)
+2026-06-15 23:59:38,760 | INFO | GARDER et surponderer : higher_lows (IC=+0.2471)
+2026-06-15 23:59:38,761 | INFO | GARDER et surponderer : final_score (IC=+0.1847)
+2026-06-15 23:59:38,761 | INFO | A surveiller : short_ratio (non significatif pour l instant)
+2026-06-15 23:59:38,761 | INFO | A surveiller : vol_dryup (non significatif pour l instant)
+2026-06-15 23:59:38,762 | INFO | A surveiller : vol_ratio (non significatif pour l instant)
+2026-06-15 23:59:38,762 | INFO | GARDER et surponderer : gross_margin_trend (IC=-0.1713)
+2026-06-15 23:59:38,762 | INFO | GARDER et surponderer : atr_declining (IC=-0.2904)
+2026-06-15 23:59:38,763 | INFO | A surveiller : rs_line (non significatif pour l instant)
+2026-06-15 23:59:38,764 | INFO | A surveiller : insider_score (non significatif pour l instant)
