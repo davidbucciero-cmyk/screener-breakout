@@ -21,10 +21,12 @@ def load_signals():
     technical = pd.read_sql('SELECT * FROM technical_signals', conn)
     fundamental = pd.read_sql('SELECT * FROM fundamental_signals', conn)
     short = pd.read_sql('SELECT * FROM short_signals', conn)
+    congress = pd.read_sql('SELECT * FROM congress_signals', conn)
     conn.close()
     df = scores.merge(technical[['ticker','obv_trend','vol_ratio','vol_dryup','bb_squeeze','atr_declining','flat_base','higher_lows','ad_trend','rs_line']], on='ticker', how='left')
     df = df.merge(fundamental[['ticker','revenue_growth','fcf_positive','gross_margin_trend']], on='ticker', how='left')
     df = df.merge(short[['ticker','short_float','short_ratio']], on='ticker', how='left')
+    df = df.merge(congress[['ticker','congress_net_score','congress_recent_flag']], on='ticker', how='left')
     df = df.fillna(0)
     return df
 
@@ -76,7 +78,8 @@ def run():
         'atr_declining', 'flat_base', 'higher_lows', 'ad_trend', 'rs_line',
         'technical_score', 'revenue_growth', 'fcf_positive',
         'gross_margin_trend', 'short_float', 'short_ratio',
-        'insider_score', 'final_score'
+        'insider_score', 'final_score',
+        'congress_net_score', 'congress_recent_flag'
     ]
 
     results = []
@@ -122,3 +125,4 @@ def run():
 
 if __name__ == '__main__':
     run()
+

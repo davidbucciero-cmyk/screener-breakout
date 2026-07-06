@@ -34,6 +34,9 @@ def main():
     import step7_reddit
     step7_reddit.run()
 
+    log.info('STEP 10 - Congressional trading...')
+    import step10_congress
+    step10_congress.run()
     log.info('STEP 5 - Scoring final...')
     import step5_scoring
     step5_scoring.run()
