@@ -64,18 +64,22 @@ def save_scores(df):
     df[cols + ['updated_at']].to_sql('final_scores', conn, if_exists='replace', index=False)
     conn.close()
 
-def send_alert(candidates):
+def send_alert(candidates, above_threshold=True):
     if not EMAIL_PASSWORD:
         log.warning('EMAIL_PASSWORD non defini - alerte email ignoree')
         return
     try:
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f'Screener Breakout - {len(candidates)} candidats ({datetime.now().strftime("%d/%m/%Y")})'
+        subject_label = f'{len(candidates)} candidats' if above_threshold else 'Top 10 (aucun seuil atteint)'
+        msg['Subject'] = f'Screener Breakout - {subject_label} ({datetime.now().strftime("%d/%m/%Y")})'
         msg['From'] = EMAIL_FROM
         msg['To'] = EMAIL_TO
         html = '<html><body>'
         html += f'<h2>Screener Pre-Breakout — {datetime.now().strftime("%d/%m/%Y")}</h2>'
-        html += f'<p>{len(candidates)} tickers avec score >= {SCORE_THRESHOLD}/10</p>'
+        if above_threshold:
+            html += f'<p>{len(candidates)} tickers avec score >= {SCORE_THRESHOLD}/10</p>'
+        else:
+            html += f"<p>Aucun ticker au-dessus du seuil {SCORE_THRESHOLD}/10 aujourd'hui. Top 10 ci-dessous a titre indicatif.</p>"
         html += '<table border="1" cellpadding="5" style="border-collapse:collapse">'
         html += '<tr><th>Ticker</th><th>Score</th><th>Prix</th><th>Tech</th><th>Insider</th><th>Fond</th><th>Short%</th><th>Reddit</th><th>Rev%</th><th>Flat Base</th><th>Cluster</th><th>Congress</th></tr>'
         for _, row in candidates.iterrows():
@@ -101,9 +105,15 @@ def run():
     log.info(f'TOP 20 CANDIDATS :\n{top20.to_string()}')
     candidates = df[df['final_score'] >= SCORE_THRESHOLD]
     log.info(f'Candidats score >= {SCORE_THRESHOLD} : {len(candidates)}')
-    if not candidates.empty:
-        send_alert(candidates)
+    above_threshold = not candidates.empty
+    if candidates.empty:
+        log.info('Aucun candidat au-dessus du seuil - envoi du top 10 a la place')
+        candidates = df.nlargest(10, 'final_score')
+    send_alert(candidates, above_threshold)
     return df
 
 if __name__ == '__main__':
     run()
+
+
+
