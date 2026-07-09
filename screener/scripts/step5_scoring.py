@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(
 log = logging.getLogger(__name__)
 
 SCORE_THRESHOLD = 6
-EMAIL_FROM = 'david.bucciero@outlook.fr'
+EMAIL_FROM = 'david.bucciero.ide@gmail.com'
 EMAIL_TO = 'david.bucciero@outlook.fr'
 EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', '')
 WEIGHTS = {'technical': 0.40, 'insider': 0.20, 'fundamental': 0.20, 'short': 0.15, 'reddit': 0.05}
@@ -86,7 +86,7 @@ def send_alert(candidates, above_threshold=True):
             html += f'<tr><td><b>{row["ticker"]}</b></td><td><b>{row["final_score"]}</b></td><td>${row["price"]:.2f}</td><td>{row["technical_score"]:.0f}/9</td><td>{row["insider_score"]:.0f}/10</td><td>{row["fundamental_score"]:.0f}/8</td><td>{row["short_float"]:.1f}%</td><td>{row["reddit_mentions"]:.0f}</td><td>{row["revenue_growth"]:.1f}%</td><td>{"✅" if row["flat_base"] else "❌"}</td><td>{"✅" if row["cluster_buy"] else "❌"}</td><td>{row["congress_net_score"]:+.0f}</td></tr>'
         html += '</table></body></html>'
         msg.attach(MIMEText(html, 'html'))
-        with smtplib.SMTP('smtp.office365.com', 587) as server:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
             server.starttls()
             server.login(EMAIL_FROM, EMAIL_PASSWORD)
             server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
@@ -114,6 +114,7 @@ def run():
 
 if __name__ == '__main__':
     run()
+
 
 
 
