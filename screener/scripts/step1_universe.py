@@ -2,6 +2,7 @@ import pandas as pd
 import sqlite3
 import logging
 import os
+import time
 from datetime import datetime
 from openbb import obb
 import yfinance as yf
@@ -32,11 +33,21 @@ SECTOR_ETF = {
     'Communication Services': 'XLC',
 }
 
+def screener_with_retry(exchange, attempts=3):
+    for attempt in range(1, attempts + 1):
+        try:
+            return obb.equity.screener(provider='yfinance', mktcap_min=MKTCAP_MIN, price_min=5.0, volume_min=300000, country='us', exchange=exchange, limit=1000).to_df()
+        except Exception as e:
+            log.warning(f'Erreur screener {exchange} (tentative {attempt}/{attempts}) : {e}')
+            if attempt == attempts:
+                raise
+            time.sleep(5 * attempt)
+
 def get_tickers():
     log.info('Screener OpenBB (mid/large cap)...')
-    df1 = obb.equity.screener(provider='yfinance', mktcap_min=MKTCAP_MIN, price_min=5.0, volume_min=300000, country='us', exchange='nms', limit=1000).to_df()
+    df1 = screener_with_retry('nms')
     log.info(f'NASDAQ : {len(df1)} tickers')
-    df2 = obb.equity.screener(provider='yfinance', mktcap_min=MKTCAP_MIN, price_min=5.0, volume_min=300000, country='us', exchange='nyq', limit=1000).to_df()
+    df2 = screener_with_retry('nyq')
     log.info(f'NYSE : {len(df2)} tickers')
     df = pd.concat([df1, df2]).drop_duplicates(subset='symbol')
     df['cap_bucket'] = df['market_cap'].apply(lambda m: 'large' if m and m > LARGE_CAP_THRESHOLD else 'mid')
