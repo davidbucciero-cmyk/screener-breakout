@@ -44,6 +44,8 @@ def get_metrics(ticker):
             'return_on_equity': row.get('return_on_equity'),
             'enterprise_value': row.get('enterprise_value'),
             'market_cap': row.get('market_cap'),
+            'ev_to_ebitda': row.get('enterprise_to_ebitda'),
+            'price_to_book': row.get('price_to_book'),
         }
     except Exception as e:
         log.debug(f'Erreur metrics {ticker} : {e}')

@@ -34,16 +34,21 @@ def ensure_raw_table(conn):
     ''')
     conn.commit()
 
-def get_institutional_ownership(ticker):
+def get_ownership(ticker):
     try:
         df = obb.equity.ownership.share_statistics(symbol=ticker, provider='yfinance').to_df()
-        if df.empty or 'institution_ownership' not in df.columns:
-            return None
-        val = df['institution_ownership'].iloc[0]
-        return float(val) if pd.notna(val) else None
+        if df.empty:
+            return None, None
+        row = df.iloc[0]
+        institution = row.get('institution_ownership')
+        insider = row.get('insider_ownership')
+        return (
+            float(institution) if pd.notna(institution) else None,
+            float(insider) if pd.notna(insider) else None,
+        )
     except Exception as e:
         log.debug(f'Erreur share_statistics {ticker} : {e}')
-        return None
+        return None, None
 
 def run():
     log.info('=' * 60)
@@ -61,13 +66,13 @@ def run():
     snapshot = []
     for idx, ticker in enumerate(tickers):
         log.info(f'[{idx+1}/{len(tickers)}] {ticker}')
-        ownership = get_institutional_ownership(ticker)
-        if ownership is not None:
+        institution_ownership, insider_ownership = get_ownership(ticker)
+        if institution_ownership is not None:
             conn.execute(
                 'INSERT INTO institutional_raw (ticker, institution_ownership, captured_at) VALUES (?, ?, ?)',
-                (ticker, ownership, now_str)
+                (ticker, institution_ownership, now_str)
             )
-            snapshot.append({'ticker': ticker, 'institution_ownership': ownership})
+            snapshot.append({'ticker': ticker, 'institution_ownership': institution_ownership, 'insider_ownership': insider_ownership})
     conn.commit()
 
     hist = pd.read_sql('SELECT * FROM institutional_raw', conn)
@@ -95,6 +100,7 @@ def run():
             'institution_ownership': current,
             'institution_ownership_90d_ago': past_value,
             'institutional_trend': institutional_trend,
+            'insider_ownership': row['insider_ownership'],
         })
 
     result_df = pd.DataFrame(results)

@@ -32,7 +32,7 @@ def load_all_signals():
     try:
         institutional = pd.read_sql('SELECT * FROM institutional_signals', conn)
     except Exception:
-        institutional = pd.DataFrame(columns=['ticker', 'institutional_trend'])
+        institutional = pd.DataFrame(columns=['ticker', 'institutional_trend', 'insider_ownership'])
     try:
         short = pd.read_sql('SELECT * FROM short_signals', conn)
     except Exception:
@@ -47,10 +47,10 @@ def load_all_signals():
         congress = pd.DataFrame(columns=['ticker', 'congress_net_score', 'congress_recent_flag'])
     conn.close()
 
-    df = universe.merge(fundamental[['ticker', 'fundamental_pass', 'fundamental_score', 'revenue_cagr', 'eps_cagr', 'peg_ratio', 'pe_ratio', 'return_on_equity', 'return_on_assets', 'profit_margin', 'net_debt_to_ebitda', 'current_ratio']], on='ticker', how='left')
+    df = universe.merge(fundamental[['ticker', 'fundamental_pass', 'fundamental_score', 'revenue_cagr', 'eps_cagr', 'peg_ratio', 'pe_ratio', 'ev_to_ebitda', 'price_to_book', 'return_on_equity', 'return_on_assets', 'profit_margin', 'net_debt_to_ebitda', 'current_ratio']], on='ticker', how='left')
     df = df.merge(technical[['ticker', 'pattern_daily', 'pattern_weekly', 'mast_rally_pct_d', 'retracement_pct_d', 'technical_score']], on='ticker', how='left')
     df = df.merge(insider[['ticker', 'insider_score', 'insider_net_90d', 'insider_net_positive', 'cluster_buy', 'senior_buy']], on='ticker', how='left')
-    df = df.merge(institutional[['ticker', 'institutional_trend']], on='ticker', how='left')
+    df = df.merge(institutional[['ticker', 'institutional_trend', 'insider_ownership']], on='ticker', how='left')
     df = df.merge(short[['ticker', 'short_float', 'short_ratio', 'short_score']], on='ticker', how='left')
     df = df.merge(reddit[['ticker', 'reddit_mentions', 'reddit_zscore', 'reddit_signal']], on='ticker', how='left')
     df = df.merge(congress[['ticker', 'congress_net_score', 'congress_recent_flag']], on='ticker', how='left')
@@ -84,9 +84,9 @@ def compute_final_score(df):
 def save_scores(df):
     conn = sqlite3.connect(DB_PATH)
     cols = ['ticker', 'price', 'mktcap', 'cap_bucket', 'sector', 'final_score', 'fundamental_pass', 'fundamental_score',
-            'revenue_cagr', 'eps_cagr', 'peg_ratio', 'return_on_equity', 'return_on_assets', 'net_debt_to_ebitda',
+            'revenue_cagr', 'eps_cagr', 'peg_ratio', 'ev_to_ebitda', 'price_to_book', 'return_on_equity', 'return_on_assets', 'net_debt_to_ebitda',
             'pattern_daily', 'pattern_weekly', 'mast_rally_pct_d', 'retracement_pct_d', 'technical_score',
-            'insider_score', 'insider_net_90d', 'insider_net_positive', 'institutional_trend',
+            'insider_score', 'insider_net_90d', 'insider_net_positive', 'institutional_trend', 'insider_ownership',
             'short_score', 'short_float', 'reddit_mentions', 'reddit_zscore', 'reddit_signal',
             'congress_net_score', 'congress_recent_flag']
     df['updated_at'] = datetime.now().isoformat()

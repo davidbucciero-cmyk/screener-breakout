@@ -48,6 +48,9 @@ def generate_html(df):
         roe = r.get('return_on_equity', 0) or 0
         roa = r.get('return_on_assets', 0) or 0
         ndebt = r.get('net_debt_to_ebitda', 0) or 0
+        ev_ebitda = r.get('ev_to_ebitda', 0) or 0
+        pb = r.get('price_to_book', 0) or 0
+        insider_own = r.get('insider_ownership', 0) or 0
         mast = r.get('mast_rally_pct_d', 0) or 0
         retr = r.get('retracement_pct_d', 0) or 0
         si = r.get('short_float', 0)
@@ -67,12 +70,15 @@ def generate_html(df):
             <td>{roa*100:.0f}%</td>
             <td>{ndebt:.1f}x</td>
             <td>{peg:.2f}</td>
+            <td>{ev_ebitda:.1f}x</td>
+            <td>{pb:.1f}</td>
             <td class="sep-tech" style="font-weight:500">{mast*100:.0f}%</td>
             <td>{retr*100:.0f}%</td>
             <td>{dot(r.get('pattern_daily',0))}</td>
             <td>{dot(r.get('pattern_weekly',0))}</td>
             <td class="sep-insider">{dot(r.get('insider_net_positive',0))}</td>
             <td>{dot(r.get('institutional_trend',0))}</td>
+            <td>{insider_own*100:.1f}%</td>
             <td class="sep-short" style="color:{si_color};font-weight:500">{si:.1f}%</td>
             <td style="color:{dtc_color}">{dtc:.1f}</td>
             <td class="sep-reddit" style="color:{reddit_color}">{reddit_m}</td>
@@ -102,7 +108,7 @@ h1 {{ font-size: 20px; font-weight: 500; margin-bottom: 4px; }}
 .m4 .metric-label {{ color: #993C1D; }} .m4 .metric-value {{ color: #712B13; }}
 .metric-value {{ font-size: 24px; font-weight: 500; }}
 .table-wrap {{ overflow-x: auto; border-radius: 12px; border: 0.5px solid #e0e0d8; margin-bottom: 1.5rem; }}
-table {{ width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1150px; background: #fff; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1350px; background: #fff; }}
 thead tr.group th {{ font-size: 9px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 8px; border-bottom: 0.5px solid #e0e0d8; text-align: center; }}
 .gh-ticker {{ background: #EEEDFE; color: #3C3489; text-align: left !important; padding-left: 12px !important; }}
 .gh-fund {{ background: #E1F5EE; color: #0F6E56; border-left: 2px solid #1D9E75; }}
@@ -152,17 +158,17 @@ tbody td.left {{ text-align: left; padding-left: 12px; }}
 <thead>
 <tr class="group">
     <th colspan="3" class="gh-ticker">Ticker</th>
-    <th colspan="6" class="gh-fund">Fondamental — CAGR / ratios</th>
+    <th colspan="8" class="gh-fund">Fondamental — CAGR / ratios</th>
     <th colspan="4" class="gh-tech">Pattern mat-fanion</th>
-    <th colspan="2" class="gh-insider">Bonus</th>
+    <th colspan="3" class="gh-insider">Bonus</th>
     <th colspan="2" class="gh-short">Short interest</th>
     <th colspan="2" class="gh-reddit">Reddit</th>
 </tr>
 <tr class="sub">
     <th class="left">Ticker</th><th class="left">Secteur/Cap</th><th class="left">Score</th>
-    <th class="sep-fund">Rev CAGR</th><th>EPS CAGR</th><th>ROE</th><th>ROA</th><th>NetDebt/EBITDA</th><th>PEG</th>
+    <th class="sep-fund">Rev CAGR</th><th>EPS CAGR</th><th>ROE</th><th>ROA</th><th>NetDebt/EBITDA</th><th>PEG</th><th>EV/EBITDA</th><th>P/B</th>
     <th class="sep-tech">Mat %</th><th>Retrace %</th><th>Daily</th><th>Weekly</th>
-    <th class="sep-insider">Insider 90j</th><th>Instit. QoQ</th>
+    <th class="sep-insider">Insider 90j</th><th>Instit. QoQ</th><th>Insider %</th>
     <th class="sep-short">SI%</th><th>DTC</th>
     <th class="sep-reddit">Mentions</th><th>Z-score</th>
 </tr>
@@ -178,11 +184,14 @@ tbody td.left {{ text-align: left; padding-left: 12px; }}
 <div class="glossary-item"><div class="glossary-key">ROE / ROA</div><div class="glossary-desc">Rentabilite capitaux/actifs</div><div class="glossary-score">Seuils >= 15% / >= 7%</div></div>
 <div class="glossary-item"><div class="glossary-key">NetDebt/EBITDA</div><div class="glossary-desc">Levier financier</div><div class="glossary-score">Seuil <= 3x</div></div>
 <div class="glossary-item"><div class="glossary-key">PEG</div><div class="glossary-desc">PEG ou PE vs mediane secteur</div><div class="glossary-score">PEG <= 2 ou PE <= 1.5x mediane</div></div>
+<div class="glossary-item"><div class="glossary-key">EV/EBITDA</div><div class="glossary-desc">Valorisation vs cash-flow op.</div><div class="glossary-score">Informatif, pas un filtre</div></div>
+<div class="glossary-item"><div class="glossary-key">P/B</div><div class="glossary-desc">Price-to-Book</div><div class="glossary-score">Informatif, pas un filtre</div></div>
 <div class="glossary-item"><div class="glossary-key">Mat %</div><div class="glossary-desc">Rally avant le plus haut</div><div class="glossary-score">Seuil >= +100%</div></div>
 <div class="glossary-item"><div class="glossary-key">Retrace %</div><div class="glossary-desc">Retracement depuis le plus haut</div><div class="glossary-score">Zone ideale -30% a -50%</div></div>
 <div class="glossary-item"><div class="glossary-key">Daily/Weekly</div><div class="glossary-desc">Pattern confirme sur l'unite de temps</div><div class="glossary-score">Consolidation 3-6 mois, range serre</div></div>
 <div class="glossary-item"><div class="glossary-key">Insider 90j</div><div class="glossary-desc">Achats nets Form 4</div><div class="glossary-score">Bonus si net > 0 sur 90 jours</div></div>
 <div class="glossary-item"><div class="glossary-key">Instit. QoQ</div><div class="glossary-desc">Detention institutionnelle</div><div class="glossary-score">Bonus si en hausse vs ~90j</div></div>
+<div class="glossary-item"><div class="glossary-key">Insider %</div><div class="glossary-desc">Detention des dirigeants</div><div class="glossary-score">Gouvernance : PDG actionnaire = bon signe</div></div>
 <div class="glossary-item"><div class="glossary-key">SI%</div><div class="glossary-desc">Short Interest % du float</div><div class="glossary-score">Signal fort si >= 10%</div></div>
 <div class="glossary-item"><div class="glossary-key">DTC</div><div class="glossary-desc">Days to Cover</div><div class="glossary-score">Signal fort si >= 5 jours</div></div>
 <div class="glossary-item"><div class="glossary-key">Mentions</div><div class="glossary-desc">Mentions Reddit sur 7 jours</div><div class="glossary-score">r/smallcaps r/stocks r/wsb r/investing</div></div>
