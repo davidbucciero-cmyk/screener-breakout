@@ -19,7 +19,11 @@ PAGE_LIMIT = 10  # Tier gratuit FMP : page=0 uniquement, limit max fiable = 10
 
 def get_universe():
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql('SELECT DISTINCT ticker FROM final_scores', conn)
+    df = pd.read_sql('''
+        SELECT DISTINCT u.ticker FROM universe u
+        JOIN fundamental_signals f ON f.ticker = u.ticker
+        WHERE f.fundamental_pass = 1
+    ''', conn)
     conn.close()
     return set(df['ticker'].astype(str).str.upper().str.strip().tolist())
 
