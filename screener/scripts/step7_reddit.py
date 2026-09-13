@@ -17,7 +17,11 @@ SUBREDDITS = ['smallcaps', 'investing', 'stocks', 'wallstreetbets']
 
 def load_universe():
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql('SELECT ticker FROM universe', conn)
+    df = pd.read_sql('''
+        SELECT u.ticker FROM universe u
+        JOIN fundamental_signals f ON f.ticker = u.ticker
+        WHERE f.fundamental_pass = 1
+    ''', conn)
     conn.close()
     return df['ticker'].tolist()
 

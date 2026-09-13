@@ -20,11 +20,15 @@ def load_signals():
     scores = pd.read_sql('SELECT * FROM final_scores', conn)
     technical = pd.read_sql('SELECT * FROM technical_signals', conn)
     fundamental = pd.read_sql('SELECT * FROM fundamental_signals', conn)
+    insider = pd.read_sql('SELECT * FROM insider_signals', conn)
+    institutional = pd.read_sql('SELECT * FROM institutional_signals', conn)
     short = pd.read_sql('SELECT * FROM short_signals', conn)
     congress = pd.read_sql('SELECT * FROM congress_signals', conn)
     conn.close()
-    df = scores.merge(technical[['ticker','obv_trend','vol_ratio','vol_dryup','bb_squeeze','atr_declining','flat_base','higher_lows','ad_trend','rs_line']], on='ticker', how='left')
-    df = df.merge(fundamental[['ticker','revenue_growth','fcf_positive','gross_margin_trend']], on='ticker', how='left')
+    df = scores.merge(technical[['ticker','mast_rally_pct_d','retracement_pct_d','pattern_daily','pattern_weekly','technical_score']], on='ticker', how='left')
+    df = df.merge(fundamental[['ticker','revenue_cagr','eps_cagr','peg_ratio','return_on_equity','return_on_assets','net_debt_to_ebitda','fundamental_score']], on='ticker', how='left')
+    df = df.merge(insider[['ticker','insider_net_positive']], on='ticker', how='left')
+    df = df.merge(institutional[['ticker','institutional_trend']], on='ticker', how='left')
     df = df.merge(short[['ticker','short_float','short_ratio']], on='ticker', how='left')
     df = df.merge(congress[['ticker','congress_net_score','congress_recent_flag']], on='ticker', how='left')
     df = df.fillna(0)
@@ -74,12 +78,11 @@ def run():
     log.info(f'Rendements calcules : {len(returns)} tickers')
 
     signals = [
-        'obv_trend', 'vol_ratio', 'vol_dryup', 'bb_squeeze',
-        'atr_declining', 'flat_base', 'higher_lows', 'ad_trend', 'rs_line',
-        'technical_score', 'revenue_growth', 'fcf_positive',
-        'gross_margin_trend', 'short_float', 'short_ratio',
-        'insider_score', 'final_score',
-        'congress_net_score', 'congress_recent_flag'
+        'mast_rally_pct_d', 'retracement_pct_d', 'pattern_daily', 'pattern_weekly',
+        'technical_score', 'revenue_cagr', 'eps_cagr', 'peg_ratio',
+        'return_on_equity', 'return_on_assets', 'net_debt_to_ebitda', 'fundamental_score',
+        'short_float', 'short_ratio', 'insider_net_positive', 'institutional_trend',
+        'final_score', 'congress_net_score', 'congress_recent_flag'
     ]
 
     results = []
