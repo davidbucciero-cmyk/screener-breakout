@@ -138,6 +138,18 @@ def run():
         log.warning('Aucun fondamental calcule')
         return
 
+    # Garde-fou : si l'API (yfinance) a echoue pour 100% des tickers, ces colonnes
+    # peuvent etre totalement absentes du DataFrame plutot que juste NaN par ligne.
+    required_cols = [
+        'peg_ratio', 'pe_ratio', 'current_ratio', 'profit_margin', 'return_on_assets',
+        'return_on_equity', 'enterprise_value', 'market_cap', 'ev_to_ebitda', 'price_to_book',
+        'revenue_cagr', 'revenue_declines', 'eps_cagr', 'eps_declines', 'ebitda_last',
+        'net_debt_to_ebitda',
+    ]
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = float('nan')
+
     sector_median_pe = df.groupby('sector')['pe_ratio'].median()
 
     def peg_or_pe_ok(r):

@@ -104,6 +104,11 @@ def run():
         })
 
     result_df = pd.DataFrame(results)
+    if result_df.empty:
+        conn.close()
+        log.warning('Aucune donnee institutionnelle recuperee (yfinance indisponible ?) - rien a sauvegarder')
+        return result_df
+
     result_df['updated_at'] = now_str
     result_df.to_sql('institutional_signals', conn, if_exists='replace', index=False)
     conn.close()
