@@ -1,0 +1,4 @@
+Ticker,Nom_Entreprise,Secteur,Type_Entreprise,Rentabilite,Croissance_Attendue,Rendement_Dividende,Niveau_Risque,P_E_Ratio,EV_Revenus,Free_Cashflow_Trend,Profil_Investisseur,Verdict
+VST,Vistra Corporation,Énergie,IPP - Producteur Électricité,Bonne,2-4%,3-4%,Moyen,12-15x,4-5x,Positif,Revenu/Équilibre,HOLD
+WAT,Waters Corporation,Instrumentation/Tech,Fabricant Analytique,Excellente,3-5%,1-2%,Faible,15-20x,5-6x,Stable,Croissance Modérée,HOLD
+RKLB,Rocket Lab USA,Aérospatiale,Lanceur Spatial,Faible,30%+,0%,Très Élevé,N/A,>10x,Négatif,Croissance/Spéculatif,SPÉCULATIF
