@@ -114,12 +114,59 @@
       "justification": "Potentiel énorme de croissance mais risques majeurs ; idéal pour portefeuille croissance agressif"
     }
   },
+    "ISRG": {
+      "nom_complet": "Intuitive Surgical, Inc.",
+      "ticker": "ISRG",
+      "secteur": "Santé - Technologie Médicale",
+      "type_entreprise": "Leader mondial chirurgie robotisée (système da Vinci)",
+      "resume_court": "Leader quasi-monopolistique en chirurgie robotisée avec modèle économique supérieur et croissance prédictible",
+      "points_forts": [
+        "Position de marché dominante (70%+ part marché)",
+        "Modèle d'affaires supérieur (70%+ marge brute, 28%+ marge nette)",
+        "Revenus récurrents prévisibles (50% via contrats maintenance)",
+        "Croissance solide et accélérant (+10.4% en 2024)",
+        "Expansion internationale sous-exploitée (+25% groissance intl)",
+        "Innovation continue (12-15% R&D annuel)",
+        "Bilan exceptionnel (net cash position)",
+        "Portfolio produits diversifié et complémentaire",
+        "Data advantage via milliards de datapoints de procédures"
+      ],
+      "points_faibles": [
+        "Valorisation très premium (P/E 68x vs 20-25x secteur)",
+        "Saturation marché américain (croissance ralentit +5%)",
+        "Concurrence croissante (Medtronic Hugo, Zimmer, Stryker)",
+        "Cyclicalité procédures électives (sensibilité récession)",
+        "Dépendance remboursement (Medicare, assurances)",
+        "Rendement dividende très faible (0.3%)",
+        "Risques litige et réglementaires possibles",
+        "Peu de marge sécurité en cas déception de croissance"
+      ],
+      "metriques": {
+        "revenus_2024": "7.4Mds$",
+        "croissance_2024": "10.4%",
+        "ebitda_margin": "43.2%",
+        "marge_nette": "28.4%",
+        "fcf": "2.5Mds$",
+        "p_e_ratio": "68x",
+        "ev_revenus": "12.5x",
+        "rendement_dividende": "0.3%",
+        "croissance_attendue": "10-11% CAGR",
+        "rentabilite": "Excellente"
+      },
+      "risque": "Moyen-Haut",
+      "horizon_investissement": "Long terme (5-10 ans)",
+      "profil_investisseur": ["Croissance qualité", "Long-term conviction", "Tolérance risque modéré"],
+      "verdict": "HOLD / ACHETER sur baisse",
+      "justification": "Entreprise qualité supérieure avec croissance prédictible, mais valorisation premium justifie attendre une baisse de -15%"
+    }
+  },
   "synthese_comparative": {
     "meilleur_revenu": "VST",
-    "meilleure_qualite": "WAT",
+    "meilleure_qualite": "ISRG",
+    "meilleure_croissance_stable": "WAT",
     "meilleur_potentiel_croissance": "RKLB",
     "profil_conservateur": "WAT",
-    "profil_equilibre": "VST",
-    "profil_agressif": "RKLB"
+    "profil_equilibre": "VST + WAT",
+    "profil_agressif": "ISRG + RKLB"
   }
 }

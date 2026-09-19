@@ -1,4 +1,5 @@
-Ticker,Nom_Entreprise,Secteur,Type_Entreprise,Rentabilite,Croissance_Attendue,Rendement_Dividende,Niveau_Risque,P_E_Ratio,EV_Revenus,Free_Cashflow_Trend,Profil_Investisseur,Verdict
-VST,Vistra Corporation,Énergie,IPP - Producteur Électricité,Bonne,2-4%,3-4%,Moyen,12-15x,4-5x,Positif,Revenu/Équilibre,HOLD
-WAT,Waters Corporation,Instrumentation/Tech,Fabricant Analytique,Excellente,3-5%,1-2%,Faible,15-20x,5-6x,Stable,Croissance Modérée,HOLD
-RKLB,Rocket Lab USA,Aérospatiale,Lanceur Spatial,Faible,30%+,0%,Très Élevé,N/A,>10x,Négatif,Croissance/Spéculatif,SPÉCULATIF
+Ticker,Nom_Entreprise,Secteur,Type_Entreprise,Rentabilite,Croissance_Attendue,Rendement_Dividende,Niveau_Risque,P_E_Ratio,EV_Revenus,Free_Cashflow_Trend,Profil_Investisseur,Verdict,Note_Score
+VST,Vistra Corporation,Énergie,IPP - Producteur Électricité,Bonne,2-4%,3-4%,Moyen,12-15x,4-5x,Positif,Revenu/Équilibre,HOLD,6.8/10
+WAT,Waters Corporation,Instrumentation/Tech,Fabricant Analytique,Excellente,4-5%,1.8%,Faible,18.5x,5.2x,Solide,Croissance Modérée,HOLD,6.8/10
+RKLB,Rocket Lab USA,Aérospatiale,Lanceur Spatial,Négative,60%+,0%,Très Élevé,N/A,185x,Négatif,Croissance/Spéculatif,SPÉCULATIF,5.5/10
+ISRG,Intuitive Surgical,Santé/Tech Médicale,Chirurgie Robotisée,Excellente,10-11%,0.3%,Moyen-Haut,68x,12.5x,Excellent,Croissance Premium,HOLD/ACHETER,7.0/10
