@@ -17,6 +17,9 @@ BASE_URL = 'https://financialmodelingprep.com/stable'
 RECENCY_DAYS = 45
 PAGE_LIMIT = 10  # Tier gratuit FMP : page=0 uniquement, limit max fiable = 10
 
+QUIVER_API_KEY = os.environ.get('QUIVER_API_KEY', '')
+QUIVER_URL = 'https://api.quiverquant.com/beta/live/congresstrading'
+
 def get_universe():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql('''
@@ -42,6 +45,31 @@ def fetch_latest(endpoint):
         log.error(f'Erreur {endpoint} : {e}')
         return []
 
+def fetch_quiver():
+    """Flux live QuiverQuant (Senate + House). Retourne [(row, chamber)] au format FMP, ou None si indisponible."""
+    if not QUIVER_API_KEY:
+        log.warning('QUIVER_API_KEY non definie, fallback FMP')
+        return None
+    headers = {'Accept': 'application/json', 'Authorization': f'Bearer {QUIVER_API_KEY}'}
+    try:
+        r = requests.get(QUIVER_URL, headers=headers, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        log.error(f'Erreur QuiverQuant : {e}')
+        return None
+    log.info(f'QuiverQuant congresstrading : {len(data)} lignes recuperees')
+    rows = []
+    for q in data:
+        chamber = 'Senate' if 'senate' in str(q.get('House', '')).lower() else 'House'
+        ticker = str(q.get('Ticker', '')).upper().strip()
+        tx_date = str(q.get('TransactionDate', ''))[:10]
+        member = q.get('Representative', '')
+        tx_type = q.get('Transaction', '')
+        uid = f"QQ_{ticker}_{tx_date}_{member}_{tx_type}_{q.get('Range', '')}_{chamber}"
+        rows.append(({'symbol': ticker, 'transactionDate': tx_date, 'type': tx_type, 'link': uid}, chamber))
+    return rows
+
 def classify_type(t):
     t = str(t).lower()
     if 'purchase' in t or t == 'buy':
@@ -65,15 +93,17 @@ def ensure_raw_table(conn):
 
 def run():
     log.info('=' * 60)
-    log.info('STEP 10 - SIGNAL CONGRESSIONAL TRADING (source: FMP, snapshot quotidien)')
+    log.info('STEP 10 - SIGNAL CONGRESSIONAL TRADING (source: QuiverQuant, fallback FMP)')
     log.info('=' * 60)
 
     universe = get_universe()
     log.info(f'Univers : {len(universe)} tickers')
 
-    senate_raw = fetch_latest('senate-latest')
-    house_raw = fetch_latest('house-latest')
-    all_raw = [(r, 'Senate') for r in senate_raw] + [(r, 'House') for r in house_raw]
+    all_raw = fetch_quiver()
+    if all_raw is None:
+        senate_raw = fetch_latest('senate-latest')
+        house_raw = fetch_latest('house-latest')
+        all_raw = [(r, 'Senate') for r in senate_raw] + [(r, 'House') for r in house_raw]
 
     conn = sqlite3.connect(DB_PATH)
     ensure_raw_table(conn)
