@@ -16,7 +16,7 @@ documentees.
 - [x] Etape 1 - Donnees (`data.py`, `synthetic.py`, `config.py`)
 - [x] Etape 2 - Signaux (Hurst, EMA, Ornstein-Uhlenbeck, EWMA vol)
 - [x] Etape 3 - Combinaison des signaux (`portfolio.py`)
-- [ ] Etape 4 - Risque et sizing
+- [x] Etape 4 - Risque et sizing (`risk.py`)
 - [ ] Etape 5 - Backtest walk-forward
 - [ ] Etape 6 - Execution (dry-run par defaut)
 
