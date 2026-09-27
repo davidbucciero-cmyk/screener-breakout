@@ -296,8 +296,9 @@ class WalkForwardValidator:
         for train_start, train_end, test_start, test_end in splits:
             train_slice = _slice_price_data(price_data, ref_index[train_start:train_end])
             test_slice = _slice_price_data(price_data, ref_index[test_start:test_end])
+            test_length = test_end - test_start
 
-            best_cfg, best_sharpe = self._select_best_config(train_slice)
+            best_cfg, best_sharpe = self._select_best_config(train_slice, test_length)
             if best_cfg is None:
                 continue  # aucune config n'a produit de resultat exploitable sur ce train
 
@@ -337,11 +338,29 @@ class WalkForwardValidator:
 
         return oos_equity, fold_results
 
-    def _select_best_config(self, train_slice: Dict[str, pd.DataFrame]) -> Tuple[Optional[BacktestConfig], float]:
+    def _select_best_config(
+        self, train_slice: Dict[str, pd.DataFrame], test_length: int
+    ) -> Tuple[Optional[BacktestConfig], float]:
+        """Choisit la config au meilleur Sharpe train, PARMI celles qui ont
+        structurellement une chance de produire un resultat exploitable sur
+        le prochain segment de test (de taille fixe `test_length`).
+
+        Sans ce filtre, une config a grande fenetre de warm-up (hurst/ou/ema)
+        peut sembler la meilleure sur un train qui grandit a chaque fold
+        (justement parce qu'elle overfit sur peu de trades), etre choisie,
+        puis echouer entierement sur le test suivant (pas assez de bougies
+        pour sortir du warm-up) - ce qui invalidait silencieusement le fold
+        entier (voir README). Ce filtre ne regarde jamais les PRIX du test,
+        seulement la taille du segment : aucune fuite d'information train/test.
+        """
         best_cfg = None
         best_sharpe = -np.inf
 
         for cfg in self.config_grid:
+            max_window = max(cfg.ema_slow, cfg.ema_vol_window, cfg.hurst_window, cfg.ou_window)
+            if max_window + self.min_valid_periods > test_length:
+                continue
+
             try:
                 train_result = run_backtest(train_slice, cfg)
             except ValueError:

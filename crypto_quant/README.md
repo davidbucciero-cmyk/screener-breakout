@@ -35,6 +35,7 @@ vrai historique `CCXTDataFeed.get_universe_history(...)`.
 - [x] Etape 4 - Risque et sizing (`risk.py`)
 - [x] Etape 5 - Backtest walk-forward (`backtest.py`, `metrics.py`)
 - [x] Etape 6 - Execution (`execution.py`)
+- [x] Etape 7 - Premier backtest reel contre Kraken (donnees vraies, pas synthetiques) - voir Etape 1 ci-dessous pour les resultats et les bugs trouves
 
 ## Etape 6 - Execution (dry-run par defaut, live derriere 3 barrieres)
 
@@ -132,14 +133,79 @@ geometrique + composante de retour a la moyenne Ornstein-Uhlenbeck) et
 fournit `FakeExchange`, un faux client ccxt utilise dans les tests pour
 verifier la logique de pagination/cache sans acces reseau.
 
-### Limite connue de cet environnement de dev
+### Mise a jour : premier backtest reel contre Kraken (etape 7)
 
-Dans le sandbox cloud utilise pour developper ce module, l'acces reseau
-sortant vers `api.kraken.com` est bloque par la politique d'egress de la
-session (403). Le code est ecrit pour un usage reel (il suffit d'un acces
-internet normal, aucune cle API n'est requise pour lire des donnees
-publiques), mais n'a pas pu etre teste en direct contre Kraken depuis cette
-session - seulement contre des donnees synthetiques via `FakeExchange`.
+Le blocage reseau mentionne plus bas a ete leve dans une session ulterieure
+(environnement a acces reseau complet). `curl https://api.kraken.com/0/public/Time`
+et un vrai `ccxt.kraken()` fonctionnent. Deux points a connaitre pour
+reproduire :
+
+- **ccxt et le proxy de la session** : ccxt met `session.trust_env = False`
+  par defaut sur son client `requests` interne, donc il ignore les variables
+  d'environnement standard (`REQUESTS_CA_BUNDLE`, `HTTPS_PROXY`) meme quand
+  elles sont correctement configurees pour le reste de l'environnement. Sans
+  ca, on obtient une erreur `SSL: CERTIFICATE_VERIFY_FAILED` (le proxy
+  reterminie le TLS avec son propre certificat). Fix a l'usage, pas dans le
+  code de `crypto_quant` (comportement specifique a cet environnement
+  proxifie, pas quelque chose a coder en dur dans `build_exchange`) :
+  ```python
+  ex = ccxt.kraken({"enableRateLimit": True})
+  ex.session.trust_env = True  # avant de le passer a CCXTDataFeed(exchange_client=ex)
+  ```
+- **Limite reelle de l'API OHLC publique de Kraken** : verifie directement
+  (appel `fetch_ohlcv` avec un `since` vieux de 400 jours -> Kraken renvoie
+  quand meme seulement les ~720 dernieres bougies, en ignorant le `since`).
+  Ce n'est pas un bug de pagination cote client : l'endpoint OHLC public de
+  Kraken ne sert que les N dernieres bougies les plus recentes (~720, quel
+  que soit le timeframe), pas d'historique profond arbitraire. Consequence
+  concrete : en `1h`, on ne peut recuperer que ~30 jours reels, pas les 730
+  jours par defaut de `Config`. Pour un historique de plusieurs mois/annees,
+  utiliser un timeframe plus grossier (`1d` -> ~720 jours, verifie).
+
+**Deux bugs reels trouves et corriges grace a ce premier test en conditions
+reelles** (jamais apparus sur les 58 tests avec donnees synthetiques,
+documentes ici par souci de transparence) :
+- `CCXTDataFeed.get_history` (`data.py`) : le cache ne remontait jamais en
+  arriere. Un premier appel avec un `history_days` petit plafonnait
+  silencieusement tous les appels suivants avec un `history_days` plus grand
+  (le cache n'etait complete qu'en avant, jamais en arriere) - decouvert en
+  demandant 180 jours d'historique apres un test initial a 3 jours. Fix :
+  `get_history` detecte maintenant si le cache ne couvre pas assez loin en
+  arriere et backfill le segment manquant en plus de l'extension en avant.
+- `WalkForwardValidator._select_best_config` (`backtest.py`) : la selection
+  choisissait la config au meilleur Sharpe TRAIN sans verifier qu'elle
+  pouvait meme produire un resultat sur le prochain segment de TEST (taille
+  fixe). Sur donnees Kraken reelles (1d, ~700 jours, 4 folds), une config a
+  grande fenetre (150 periodes de warm-up) gagnait sur un train qui grandit
+  a chaque fold - precisement parce qu'elle overfit sur peu de trades - puis
+  echouait integralement sur le test suivant (140 bougies, dont 150
+  necessaires en warm-up) : 3 folds sur 4 etaient perdus silencieusement.
+  Fix : la selection exclut maintenant, sur un critere purement structurel
+  (taille du test, jamais ses prix), les configs qui ne peuvent
+  structurellement pas produire de resultat exploitable sur le test suivant.
+
+**Resultats du premier backtest reel** (BTC/USD + ETH/USD, capital initial
+10 000$, couts de transaction inclus) - rapportes sans enjolivure :
+
+| | 1h, ~30j reels (limite Kraken), config par defaut | 1d, ~700j reels, config recalibree (target_vol, cooldown) |
+|---|---|---|
+| Backtest simple - Sharpe | -3.23 | -1.02 |
+| Backtest simple - CAGR | -66% | -35% |
+| Backtest simple - max drawdown | -13.6% | -63.4% |
+| Walk-forward OOS - Sharpe | n/a (trop court pour un WFV a 4 folds) | **0.35** |
+| Walk-forward OOS - CAGR | n/a | 6.6% |
+| Walk-forward OOS - max drawdown | n/a | -36.5% |
+| Walk-forward OOS - hit rate | n/a | 12.8% |
+
+**Verdict honnete** : rien ici ne demontre un edge reel. Le backtest simple
+(periode complete, une seule config) est nettement negatif dans les deux
+cas. Le Sharpe hors-echantillon de 0.35 en walk-forward est a peine positif,
+sur un tres petit echantillon (n=360 jours-test, 4 folds, 2 actifs), avec un
+hit rate de seulement 12.8% (la performance ne tient qu'a de rares gros
+gains - profil fragile, pas un edge robuste). La config choisie est stable
+d'un fold a l'autre (bon signe methodologique - pas de flip-flop erratique),
+mais ca ne compense pas la faiblesse du signal lui-meme. A ce stade, la
+strategie ne montre pas d'edge exploitable sur cet univers/cette periode.
 
 ### Installation et tests
 

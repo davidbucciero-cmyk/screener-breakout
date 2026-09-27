@@ -111,28 +111,39 @@ class CCXTDataFeed:
     ) -> pd.DataFrame:
         """Renvoie l'historique OHLCV complet demande, en completant le cache.
 
-        Ne re-telecharge que les bougies manquantes depuis la derniere
-        execution (ou tout l'historique si le cache est vide / force_refresh).
+        Ne re-telecharge que les bougies manquantes : en avant depuis la
+        derniere execution, ET en arriere si `history_days` demande remonte
+        plus loin que ce que le cache couvre deja (sinon un premier appel
+        avec un `history_days` petit plafonnerait silencieusement tous les
+        appels suivants, meme avec un `history_days` plus grand).
         """
         now_ms = int(time.time() * 1000)
         earliest_wanted_ms = now_ms - history_days * 24 * 60 * 60 * 1000
 
         cached = None if force_refresh else self._load_cache(symbol, timeframe)
 
+        new_frames = []
         if cached is not None and not cached.empty:
+            first_cached_ts = int(cached["timestamp"].min())
             last_cached_ts = int(cached["timestamp"].max())
-            since_ms = max(last_cached_ts + 1, earliest_wanted_ms)
+
+            if earliest_wanted_ms < first_cached_ts:
+                backfill_rows = self._fetch_ohlcv_paginated(
+                    symbol, timeframe, earliest_wanted_ms, until_ms=first_cached_ts
+                )
+                if backfill_rows:
+                    new_frames.append(pd.DataFrame(backfill_rows, columns=OHLCV_COLUMNS))
+
+            forward_rows = self._fetch_ohlcv_paginated(symbol, timeframe, last_cached_ts + 1)
+            if forward_rows:
+                new_frames.append(pd.DataFrame(forward_rows, columns=OHLCV_COLUMNS))
         else:
-            since_ms = earliest_wanted_ms
+            all_rows = self._fetch_ohlcv_paginated(symbol, timeframe, earliest_wanted_ms)
+            if all_rows:
+                new_frames.append(pd.DataFrame(all_rows, columns=OHLCV_COLUMNS))
 
-        new_rows = self._fetch_ohlcv_paginated(symbol, timeframe, since_ms)
-
-        if new_rows:
-            new_df = pd.DataFrame(new_rows, columns=OHLCV_COLUMNS)
-            if cached is not None and not cached.empty:
-                combined = pd.concat([cached, new_df], ignore_index=True)
-            else:
-                combined = new_df
+        if new_frames:
+            combined = pd.concat(([cached] if cached is not None and not cached.empty else []) + new_frames, ignore_index=True)
         else:
             combined = cached if cached is not None else pd.DataFrame(columns=OHLCV_COLUMNS)
 
