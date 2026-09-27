@@ -14,7 +14,7 @@ documentees.
 ## Etat d'avancement
 
 - [x] Etape 1 - Donnees (`data.py`, `synthetic.py`, `config.py`)
-- [ ] Etape 2 - Signaux (Hurst, EMA, Ornstein-Uhlenbeck, EWMA vol)
+- [x] Etape 2 - Signaux (Hurst, EMA, Ornstein-Uhlenbeck, EWMA vol)
 - [ ] Etape 3 - Combinaison des signaux
 - [ ] Etape 4 - Risque et sizing
 - [ ] Etape 5 - Backtest walk-forward

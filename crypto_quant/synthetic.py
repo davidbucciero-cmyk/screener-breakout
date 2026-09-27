@@ -26,6 +26,7 @@ def generate_synthetic_ohlcv(
     start_price: float = 100.0,
     drift: float = 0.0,
     gbm_vol: float = 0.01,
+    momentum_rho: float = 0.0,
     ou_theta: float = 0.05,
     ou_sigma: float = 0.005,
     seed: Optional[int] = None,
@@ -33,13 +34,32 @@ def generate_synthetic_ohlcv(
 ) -> List[list]:
     """Renvoie une liste de bougies au format ccxt : [ts_ms, o, h, l, c, v].
 
-    log_price[t] = log_price[t-1] + drift + gbm_vol * N(0,1)      (tendance/bruit)
-                   + ou_component[t]                               (retour a la moyenne)
-    ou_component suit dX = -theta * X dt + sigma * dW (Ornstein-Uhlenbeck discretise).
+    log_price[t] = log_price[t-1] + drift + bruit_filtre[t]        (tendance persistante/bruit)
+                   + ou_component[t]                                (retour a la moyenne)
+
+    bruit_filtre est un bruit blanc N(0, gbm_vol) passe dans un filtre AR(1)
+    de coefficient momentum_rho : filtre[t] = momentum_rho*filtre[t-1] + bruit[t].
+    Avec momentum_rho > 0, les increments deviennent positivement autocorreles
+    (persistance/momentum) : c'est ce qui produit un exposant de Hurst > 0.5,
+    PAS une simple derive constante (une marche aleatoire avec derive reste
+    une marche aleatoire, H≈0.5 - la derive ne cree aucune autocorrelation
+    des increments).
+
+    ou_component suit dX = -theta * X dt + sigma * dW (Ornstein-Uhlenbeck discretise),
+    et cree au contraire une autocorrelation negative -> H < 0.5.
     """
     rng = np.random.default_rng(seed)
 
-    gbm_shocks = rng.normal(loc=drift, scale=gbm_vol, size=n_periods)
+    noise = rng.normal(loc=0.0, scale=gbm_vol, size=n_periods)
+    if momentum_rho != 0.0:
+        filtered_noise = np.zeros(n_periods)
+        filtered_noise[0] = noise[0]
+        for t in range(1, n_periods):
+            filtered_noise[t] = momentum_rho * filtered_noise[t - 1] + noise[t]
+    else:
+        filtered_noise = noise
+
+    gbm_shocks = drift + filtered_noise
     log_price = np.cumsum(gbm_shocks) + np.log(start_price)
 
     ou = np.zeros(n_periods)
@@ -91,10 +111,15 @@ class FakeExchange:
         return candidates[:limit]
 
 
-def synthetic_dataframe(n_periods: int, timeframe: str = "1h", seed: Optional[int] = None) -> pd.DataFrame:
-    """Raccourci : genere directement un DataFrame OHLCV indexe par date."""
+def synthetic_dataframe(n_periods: int, timeframe: str = "1h", seed: Optional[int] = None, **kwargs) -> pd.DataFrame:
+    """Raccourci : genere directement un DataFrame OHLCV indexe par date.
+
+    kwargs est transmis a generate_synthetic_ohlcv (drift, gbm_vol, ou_theta,
+    ou_sigma, ...) pour permettre de fabriquer des series au comportement
+    controle dans les tests (ex: forte tendance, fort retour a la moyenne).
+    """
     tf_seconds = FakeExchange.TIMEFRAME_SECONDS[timeframe]
-    rows = generate_synthetic_ohlcv(n_periods, tf_seconds, seed=seed)
+    rows = generate_synthetic_ohlcv(n_periods, tf_seconds, seed=seed, **kwargs)
     df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     return df.set_index("datetime").drop(columns=["timestamp"])
