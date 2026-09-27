@@ -2,3 +2,4 @@
 requests>=2.31.0
 yfinance>=0.2.36
 openbb>=4.0.0
+statsmodels>=0.14.0
