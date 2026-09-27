@@ -119,30 +119,62 @@ def atr_stop_loss_price(entry_price: float, atr_value: float, direction: int = 1
 
 class DrawdownCircuitBreaker:
     """Coupe-circuit avec hysteresis : suspend les nouvelles positions apres
-    une perte importante, ne reprend qu'apres recuperation partielle.
+    une perte importante, ne reprend qu'apres recuperation partielle OU un
+    delai de reprise (cooldown_periods).
 
-    Evite l'effet ping-pong d'un seuil unique (halte/reprise/halte au moindre
-    battement autour du seuil).
+    Le cooldown est necessaire : une fois totalement en cash, l'equity ne
+    bouge plus du tout (aucune position = aucun gain/perte), donc la
+    condition "drawdown remonte au-dessus de -resume_drawdown" ne peut
+    JAMAIS se declencher toute seule (le drawdown reste fige a sa valeur de
+    declenchement pour toujours). Sans cooldown, la strategie resterait
+    plate indefiniment des le premier coupe-circuit, meme si le marche se
+    redresse completement pendant qu'on est a l'ecart.
+
+    A la reprise (recuperation ou cooldown), le pic de reference est
+    reinitialise au niveau d'equity courant : on ne exige pas de rattraper
+    l'ancien pic historique (potentiellement tres eloigne, voire jamais
+    rattrapable apres une perte importante), on repart avec un nouveau
+    plus-haut a partir de la reprise.
     """
 
-    def __init__(self, halt_drawdown: float = 0.20, resume_drawdown: float = 0.10):
+    def __init__(self, halt_drawdown: float = 0.20, resume_drawdown: float = 0.10, cooldown_periods: int = 24):
         if resume_drawdown >= halt_drawdown:
             raise ValueError("resume_drawdown doit etre strictement inferieur a halt_drawdown")
         self.halt_drawdown = halt_drawdown
         self.resume_drawdown = resume_drawdown
+        self.cooldown_periods = cooldown_periods
+        self.reset()
+
+    def reset(self) -> None:
+        """Reinitialise l'etat interne (a appeler avant une nouvelle simulation)."""
+        self._running_max = None
+        self._halted = False
+        self._periods_since_halt = 0
+
+    def step(self, equity_value: float) -> bool:
+        """Usage incremental (backtest pas-a-pas) : met a jour l'etat avec une
+        nouvelle valeur d'equity, renvoie True si le trading est autorise."""
+        if self._running_max is None or equity_value > self._running_max:
+            self._running_max = equity_value
+
+        drawdown = (equity_value - self._running_max) / self._running_max
+
+        if not self._halted and drawdown <= -self.halt_drawdown:
+            self._halted = True
+            self._periods_since_halt = 0
+        elif self._halted:
+            self._periods_since_halt += 1
+            recovered = drawdown >= -self.resume_drawdown
+            cooldown_elapsed = self._periods_since_halt >= self.cooldown_periods
+            if recovered or cooldown_elapsed:
+                self._halted = False
+                self._running_max = equity_value
+
+        return not self._halted
 
     def evaluate(self, equity_curve: pd.Series) -> pd.Series:
-        """Renvoie une Series booleenne 'trading_allowed', meme index que equity_curve."""
-        running_max = equity_curve.cummax()
-        drawdown = (equity_curve - running_max) / running_max
-
-        allowed = np.ones(len(equity_curve), dtype=bool)
-        halted = False
-        for i, dd in enumerate(drawdown.values):
-            if not halted and dd <= -self.halt_drawdown:
-                halted = True
-            elif halted and dd >= -self.resume_drawdown:
-                halted = False
-            allowed[i] = not halted
-
+        """Usage vectorise (analyse a posteriori) : renvoie une Series
+        booleenne 'trading_allowed', meme index que equity_curve."""
+        self.reset()
+        allowed = [self.step(v) for v in equity_curve.values]
         return pd.Series(allowed, index=equity_curve.index, name="trading_allowed")

@@ -17,6 +17,8 @@ la periode de warm-up qui n'a pas assez d'historique).
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -74,12 +76,23 @@ def _ar1_regression(x_prev: np.ndarray, x_curr: np.ndarray) -> tuple:
     se_b est l'erreur-type de b (formule OLS standard), utilisee ensuite pour
     juger si b est *statistiquement* < 1, plutot que de se fier a l'estimation
     ponctuelle (bruitee sur petit echantillon).
+
+    Renvoie des NaN si x_prev est (quasi) constant (ex: prix plat sur toute
+    la fenetre) : la regression n'a alors aucune information exploitable, et
+    np.polyfit deviendrait numeriquement mal conditionne (RankWarning).
     """
-    b, a = np.polyfit(x_prev, x_curr, 1)
+    n = len(x_prev)
+    if n <= 2 or np.std(x_prev) == 0:
+        return np.nan, np.nan, np.nan, np.nan
+
+    with warnings.catch_warnings():
+        # Un segment quasi-lineaire/quasi-constant peut mal conditionner
+        # numeriquement le polyfit (RankWarning) sans que le resultat soit
+        # incorrect ; le filtre ci-dessous evite le bruit dans les logs sans
+        # masquer d'autres avertissements potentiellement utiles.
+        warnings.filterwarnings("ignore", category=np.exceptions.RankWarning)
+        b, a = np.polyfit(x_prev, x_curr, 1)
     residuals = x_curr - (a + b * x_prev)
-    n = len(residuals)
-    if n <= 2:
-        return a, b, np.nan, np.nan
 
     residual_std = np.std(residuals, ddof=2)
     ss_x = np.sum((x_prev - np.mean(x_prev)) ** 2)

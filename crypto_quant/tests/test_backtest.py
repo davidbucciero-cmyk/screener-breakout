@@ -1,0 +1,113 @@
+"""Tests du backtester (etape 5)."""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+import numpy as np
+import pandas as pd
+
+from crypto_quant.backtest import BacktestConfig, run_backtest
+from crypto_quant.synthetic import synthetic_dataframe
+
+FIXED_END_MS = 1_700_000_000_000
+
+
+def _small_multi_asset_universe():
+    return {
+        "TREND_UP": synthetic_dataframe(
+            300, end_ms=FIXED_END_MS, drift=0.003, gbm_vol=0.005, momentum_rho=0.6, ou_theta=0.0, ou_sigma=0.0, seed=42
+        ),
+        "MEANREV": synthetic_dataframe(
+            300, end_ms=FIXED_END_MS, drift=0.0, gbm_vol=0.0005, ou_theta=0.25, ou_sigma=0.03, seed=6
+        ),
+    }
+
+
+def test_run_backtest_basic_shape_and_no_nans():
+    price_data = _small_multi_asset_universe()
+    cfg = BacktestConfig()
+    result = run_backtest(price_data, cfg)
+
+    assert len(result.equity) > 0
+    assert not result.equity.isna().any()
+    assert list(result.weights_history.columns) == list(price_data.keys())
+    assert not result.weights_history.isna().any().any()
+    assert result.equity.iloc[0] == cfg.initial_capital
+
+
+def test_leverage_never_exceeds_max_leverage():
+    price_data = _small_multi_asset_universe()
+    cfg = BacktestConfig(max_leverage=1.0)
+    result = run_backtest(price_data, cfg)
+
+    total_exposure = result.weights_history.sum(axis=1)
+    assert (total_exposure <= 1.0 + 1e-9).all(), "L'exposition totale ne doit jamais depasser max_leverage (spot)"
+    assert (total_exposure >= 0).all()
+
+
+def test_transaction_costs_reduce_final_equity():
+    price_data = _small_multi_asset_universe()
+
+    cfg_no_cost = BacktestConfig(transaction_cost_bps=0.0)
+    cfg_high_cost = BacktestConfig(transaction_cost_bps=200.0)
+
+    result_no_cost = run_backtest(price_data, cfg_no_cost)
+    result_high_cost = run_backtest(price_data, cfg_high_cost)
+
+    assert result_high_cost.turnover_history.sum() > 0, "Le test suppose du turnover reel pour etre significatif"
+    assert result_high_cost.equity.iloc[-1] < result_no_cost.equity.iloc[-1], (
+        "Des couts de transaction plus eleves doivent reduire l'equity finale, toutes choses egales par ailleurs"
+    )
+
+
+def test_drawdown_circuit_breaker_halts_during_backtest_crash():
+    # Serie construite a la main (pas le generateur synthetique) pour un
+    # controle total. Montee courte (juste assez pour la periode de warm-up
+    # des signaux), puis krach de -35% en UNE SEULE bougie : le poids
+    # applique a ce passage a ete decide juste avant, avec les donnees
+    # d'avant le krach - impossible pour le modele de l'eviter en reagissant
+    # plus vite, ce qui rend le test deterministe. Un krach etale sur
+    # plusieurs bougies laisserait le modele (EMA rapide) se degager avant
+    # que le seuil de drawdown soit atteint, ce qui ne testerait alors que
+    # la reactivite du signal, pas le coupe-circuit lui-meme.
+    n_uptrend = 25
+    uptrend = 100 * (1.002 ** np.arange(n_uptrend))
+    crash_bottom = uptrend[-1] * 0.65  # -35% en une bougie
+    n_flat, n_recovery = 30, 40
+    flat = np.full(n_flat, crash_bottom)
+    recovery = np.linspace(crash_bottom, crash_bottom * 1.5, n_recovery)
+    close = np.concatenate([uptrend, [crash_bottom], flat, recovery])
+
+    index = pd.date_range("2024-01-01", periods=len(close), freq="h", tz="UTC")
+    price_data = {"CRASH": pd.DataFrame({"close": close}, index=index)}
+
+    cfg = BacktestConfig(
+        ema_fast=5, ema_slow=20, ema_vol_window=20,
+        hurst_window=20, hurst_max_lag=8, ou_window=20,
+        halt_drawdown=0.20, resume_drawdown=0.10, circuit_breaker_cooldown=20,
+    )
+    result = run_backtest(price_data, cfg)
+
+    assert not result.trading_allowed_history.all(), "Le krach de -35% doit declencher le coupe-circuit au moins une fois"
+    assert result.trading_allowed_history.iloc[-1], "Le cooldown doit finir par autoriser une reprise"
+
+    # Pendant la halte, aucune position ne doit etre ouverte (poids nul).
+    halted_periods = ~result.trading_allowed_history
+    assert (result.weights_history.loc[halted_periods].sum(axis=1) == 0).all()
+
+    # La reprise doit intervenir exactement cooldown_periods bougies apres la
+    # halte (puisque le prix reste plat pendant la halte, seul le cooldown
+    # peut expliquer la reprise, pas une recuperation de l'equity).
+    first_halt_idx = result.trading_allowed_history.values.tolist().index(False)
+    resumed = result.trading_allowed_history.iloc[first_halt_idx:]
+    first_resume_offset = resumed.values.tolist().index(True)
+    assert first_resume_offset == cfg.circuit_breaker_cooldown
+
+
+if __name__ == "__main__":
+    tests = [obj for name, obj in list(globals().items()) if name.startswith("test_")]
+    for t in tests:
+        t()
+        print(f"OK: {t.__name__}")
+    print(f"\nTous les tests backtest.py passent ({len(tests)} tests).")
