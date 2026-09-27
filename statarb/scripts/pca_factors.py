@@ -26,6 +26,13 @@ def compute_daily_residuals(returns, n_factors=N_FACTORS, pca_window=PCA_WINDOW,
     precedant la fenetre de regression, eigenportefeuilles Q_j(i) = v_j(i)/sigma_i (eq. 5),
     rendements des facteurs F_j, puis regression OLS de chaque action sur ces facteurs
     sur les `loading_window` derniers jours pour obtenir le residu du jour t.
+
+    Note : Skachkov (2013) suggere de regresser sur les prix cumules plutot que sur les
+    rendements bruts pour lisser le beta et reduire le turnover. Teste empiriquement sur
+    ce jeu de donnees (44 titres, K=5, fenetre 60j) : cela degrade nettement le Sharpe
+    (-0.96 contre -0.22 toutes choses egales par ailleurs) plutot que de l'ameliorer,
+    contrairement a son exemple mono-facteur (regression sur SPY). Conserve donc la
+    regression sur les rendements ci-dessous.
     """
     dates = returns.index
     tickers = returns.columns

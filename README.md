@@ -30,12 +30,17 @@ Pipeline (`python3 statarb/run_statarb.py`) :
    sont ecartees (retour a la moyenne trop lent pour etre exploitable).
 4. **Backtest** (`scripts/pca_backtest.py`) : entree si `s <= -1.25` (long
    residu) ou `s >= 1.25` (short residu), sortie si `|s| <= 0.75`, **stop de
-   securite force a `|s| >= 3.5`** (divergence, relation factorielle rompue)
-   ou si le signal disparait pendant qu'une position est ouverte. Allocation
-   fixe de capital/50 par position (`TARGET_N_POSITIONS`) plutot qu'une
-   renormalisation quotidienne (evite de "retrader" tout le portefeuille a
-   chaque ouverture/fermeture ailleurs). Frais de transaction IBKR "Fixed
-   Pricing" modelises (0.005 $/action, min 1 $/ordre, plafond 1% du notionnel).
+   securite force a `|s| >= 3.5`** (divergence, relation factorielle rompue),
+   si le signal disparait pendant qu'une position est ouverte, **si la perte
+   depuis l'ouverture atteint -7%**, ou **apres 50 jours de detention**
+   (regles de Caldeira & Moura, 2013). Le nombre de positions simultanees est
+   **plafonne a 50** (`MAX_CONCURRENT_POSITIONS`) ; en cas de sur-demande,
+   priorite aux signaux les plus extremes et a la reversion la plus rapide
+   (score `|s|/demi-vie`). Allocation fixe de capital/50 par position
+   (`TARGET_N_POSITIONS`) plutot qu'une renormalisation quotidienne (evite de
+   "retrader" tout le portefeuille a chaque ouverture/fermeture ailleurs).
+   Frais de transaction IBKR "Fixed Pricing" modelises (0.005 $/action, min
+   1 $/ordre, plafond 1% du notionnel).
 5. **Signaux du jour** (`scripts/pca_live_signals.py`) : s-score courant et
    action suggeree par titre.
 
@@ -49,18 +54,29 @@ performante d'apres la litterature, gardee pour comparaison).
 
 ### Resultats du backtest (S&P 500, 2016-2026, ~2140 jours out-of-sample)
 
-Signal brut (avant frais) : Sharpe **+0.17**, rendement cumule +10.4%, marginalement
-positif mais faible. Net des frais IBKR (~2.9 bps/jour avec ~115 positions actives
-en moyenne, alors que l'allocation est dimensionnee pour 50) : Sharpe **-0.63**,
-rendement cumule -41%, max drawdown -46%. Repartition annuelle irreguliere
-(+2020 covid, +2021, +2024 ; -2019, -2022, -2023, -2025/26), coherente avec la
-degradation documentee du stat-arb PCA classique face a la concurrence croissante
-des fonds systematiques depuis les annees 2010 (l'edge brut existe mais est trop
-fin pour absorber des couts de transaction realistes a ce niveau de turnover).
-Piste d'amelioration directe : moins de positions mais plus grosses (reduire le
-poids relatif de la commission minimum IBKR par trade), ou enrichir le modele de
-facteurs / ajouter un filtre momentum pour augmenter l'edge brut plutot que de
-subir les couts avec la meme strategie.
+Avec le plafond de 50 positions (priorite au signal le plus fort / demi-vie la
+plus courte), le stop -7% et la limite de 50 jours de detention : **Sharpe
++0.71**, rendement cumule +29.8% sur ~8.5 ans, max drawdown **-10.2%**, cout
+moyen 1.3 bps/jour. Nette amelioration par rapport a la version precedente
+sans plafond de positions (Sharpe -0.63, drawdown -46%, ~115 positions actives
+en moyenne pour une taille de slot dimensionnee pour 50 — le sur-trading
+gonflait les couts bien plus que necessaire). Le plafond est quasi-toujours
+atteint (50.0 positions actives en moyenne), signe qu'il y a plus de signaux
+"valables" que de capital alloue pour les exploiter tous.
+
+Piste testee mais abandonnee : regresser sur les prix cumules plutot que sur
+les rendements (Skachkov, 2013) degrade le Sharpe sur ce jeu de donnees
+(-0.96 contre -0.22 toutes choses egales par ailleurs) au lieu de l'ameliorer
+comme dans son exemple mono-facteur — non retenu (voir le commentaire dans
+`pca_factors.py`).
+
+Rendement annualise encore modeste (~3.1%) pour une volatilite tres faible
+(4.5% annualise) : le profil reste celui d'un edge reel mais fin, coherent
+avec la litterature (Rad, Low & Faff 2015 documentent le meme phenomene sur
+tout le marche US 1962-2014). Pistes suivantes pour augmenter le rendement
+brut plutot que de continuer a limer les couts : enrichir le modele de
+facteurs (IPCA conditionnel) ou ajouter un filtre momentum sectoriel
+(Velissaris, 2010).
 
 **Important** : les signaux generes ne sont pas des ordres. L'execution live
 passe par des instructions IBKR en attente (non des ordres directs), a
