@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Régime Crypto</title>
+<meta name="description" content="Dashboard de suivi de l'algo quant crypto multi-signal (Hurst, EMA, Ornstein-Uhlenbeck) — backtest, walk-forward et allocation courante.">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+
+    --s1: #2a78d6; /* BTC / regime tendance / courbe backtest */
+    --s2: #eb6834; /* ETH / OOS curve */
+    --s3: #1baf7a; /* SOL */
+    --s4: #eda100; /* ADA */
+    --s5: #e87ba4; /* XRP */
+    --s1-wash: rgba(42,120,214,0.12);
+    --s2-wash: rgba(235,104,52,0.12);
+
+    --good: #0ca30c;
+    --critical: #d03b3b;
+    --warning-bg: #fdf3e2;
+    --critical-bg: #fbe9e9;
+    --good-bg: #e8f7e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+
+      --s1: #3987e5;
+      --s2: #d95926;
+      --s3: #199e70;
+      --s4: #c98500;
+      --s5: #d55181;
+      --s1-wash: rgba(57,135,229,0.16);
+      --s2-wash: rgba(217,89,38,0.16);
+
+      --good: #0ca30c;
+      --critical: #e66767;
+      --warning-bg: #2a2214;
+      --critical-bg: #2a1616;
+      --good-bg: #142a16;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s1-wash: rgba(57,135,229,0.16);
+    --s2-wash: rgba(217,89,38,0.16);
+
+    --good: #0ca30c;
+    --critical: #e66767;
+    --warning-bg: #2a2214;
+    --critical-bg: #2a1616;
+    --good-bg: #142a16;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 0 16px 48px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  header {
+    padding: 28px 0 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-secondary); font-size: 13.5px; margin: 0; max-width: 52ch; }
+  .meta { text-align: right; font-size: 12px; color: var(--text-muted); }
+  .meta code { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; }
+
+  .demo-banner {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: var(--warning-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 18px 0;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .demo-banner .dot { width: 8px; height: 8px; border-radius: 50%; background: #eda100; margin-top: 5px; flex: none; }
+  .demo-banner strong { font-weight: 650; }
+  .demo-banner p { margin: 2px 0 0; color: var(--text-secondary); }
+
+  section { margin-top: 28px; }
+  .section-title { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 12px; }
+
+  .hero-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+  .hero-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    flex: 1 1 280px;
+    min-width: 260px;
+  }
+  .hero-tile .label { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px; }
+  .hero-value { font-size: 44px; font-weight: 650; line-height: 1; letter-spacing: -0.02em; }
+  .hero-value.bad { color: var(--critical); }
+  .hero-value.good { color: var(--good); }
+  .hero-note { font-size: 12.5px; color: var(--text-muted); margin-top: 10px; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .kpi-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .kpi-tile .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .kpi-tile .value { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .kpi-tile .value.bad { color: var(--critical); }
+  .kpi-tile .value.good { color: var(--good); }
+  .kpi-tile .value.neutral { color: var(--text-primary); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px 14px;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .card-title { font-size: 14.5px; font-weight: 650; margin: 0; }
+  .card-sub { font-size: 12px; color: var(--text-muted); margin: 0; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
+  .legend-swatch.area { width: 10px; height: 10px; border-radius: 2px; }
+
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .axis-label { fill: var(--text-muted); font-size: 10.5px; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    opacity: 0;
+    transition: opacity 0.08s ease;
+    z-index: 5;
+    min-width: 150px;
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .t-date { color: var(--text-muted); font-size: 11px; margin-bottom: 4px; }
+  .tooltip .t-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+  .tooltip .t-key { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  .tooltip .t-swatch { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+  .tooltip .t-val { font-weight: 650; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+  .chart-shell { position: relative; }
+
+  .two-col { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sym { font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .sym-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  .pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .pill.trend { background: var(--s1-wash); color: var(--s1); }
+  .pill.revert { background: var(--s2-wash); color: var(--s2); }
+  .pill.neutral { background: rgba(137,135,129,0.16); color: var(--text-muted); }
+
+  .table-wrap { overflow-x: auto; }
+
+  footer { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+  footer a { color: var(--text-secondary); }
+  footer code { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Régime Crypto — Algo quant multi-signal</h1>
+      <p class="subtitle">Hurst (régime) · EMA (tendance) · Ornstein-Uhlenbeck (retour à la moyenne) · vol targeting · coupe-circuit de drawdown</p>
+    </div>
+    <div class="meta" id="meta-generated"></div>
+  </header>
+
+  <div class="demo-banner">
+    <div class="dot"></div>
+    <div>
+      <strong>Données synthétiques — pas des prix Kraken réels.</strong>
+      <p>Cette session cloud n'a pas d'accès réseau vers Kraken. Le pipeline (backtest, walk-forward, signaux) est le vrai code du projet — seules les données de marché sous-jacentes sont simulées. Une autre session avec accès réseau complet est en train de récupérer de vraies données Kraken ; ce dashboard sera mis à jour avec ces chiffres une fois disponibles.</p>
+    </div>
+  </div>
+
+  <section>
+    <p class="section-title">Performance hors-échantillon (walk-forward)</p>
+    <div class="hero-row">
+      <div class="hero-tile">
+        <div class="label">Sharpe (hors-échantillon)</div>
+        <div class="hero-value" id="hero-sharpe">—</div>
+        <div class="hero-note" id="hero-sharpe-note"></div>
+      </div>
+      <div class="kpi-grid" style="flex: 2 1 480px;">
+        <div class="kpi-tile"><div class="label">CAGR (hors-éch.)</div><div class="value" id="kpi-cagr">—</div></div>
+        <div class="kpi-tile"><div class="label">Max drawdown</div><div class="value" id="kpi-mdd">—</div></div>
+        <div class="kpi-tile"><div class="label">Hit rate</div><div class="value" id="kpi-hit">—</div></div>
+        <div class="kpi-tile"><div class="label">Turnover moyen</div><div class="value" id="kpi-turnover">—</div></div>
+        <div class="kpi-tile"><div class="label">Folds analysés</div><div class="value neutral" id="kpi-folds">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <p class="card-title">Courbe d'équity — indexée base 100</p>
+            <p class="card-sub">Backtest complet vs. hors-échantillon (walk-forward, folds enchaînés)</p>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--s1)"></span>Backtest complet (in-sample)</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:var(--s2)"></span>Walk-forward (hors-échantillon)</span>
+        </div>
+        <div class="chart-shell" id="equity-chart-shell">
+          <svg class="chart" id="equity-chart"></svg>
+          <div class="tooltip" id="equity-tooltip"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <p class="card-title">Régime actuel par actif</p>
+            <p class="card-sub">Dernière bougie disponible</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="regime-table">
+            <thead>
+              <tr>
+                <th>Actif</th>
+                <th class="num">H</th>
+                <th>Régime</th>
+                <th class="num">Poids cible</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <p class="card-title">Allocation dans le temps</p>
+          <p class="card-sub">Poids cible par actif, backtest complet (spot, long-only — la somme peut être &lt; 100&nbsp;% : le reste est en cash). Rotation élevée visible ici (27,6&nbsp;%/bougie en moyenne) : le favori change souvent d'une bougie à l'autre — une bande d'hystérésis sur les poids serait une amélioration naturelle à tester.</p>
+        </div>
+      </div>
+      <div class="legend" id="weights-legend"></div>
+      <div class="chart-shell" id="weights-chart-shell">
+        <svg class="chart" id="weights-chart"></svg>
+        <div class="tooltip" id="weights-tooltip"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <p class="card-title">Validation walk-forward — stabilité des hyperparamètres</p>
+          <p class="card-sub">Config choisie sur train (par Sharpe), appliquée telle quelle sur le test suivant</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="fold-table">
+          <thead>
+            <tr>
+              <th>Fold</th>
+              <th>Train</th>
+              <th>Test</th>
+              <th>EMA choisi (rapide/lente)</th>
+              <th class="num">Sharpe train</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Univers : <code id="foot-pairs"></code> · Timeframe <code id="foot-tf"></code> ·
+    Vol cible <code id="foot-vol"></code> par bougie · Levier max <code id="foot-lev"></code> ·
+    Coût de transaction <code id="foot-cost"></code> · Coupe-circuit à <code id="foot-dd"></code> de drawdown.
+    Code source : <code>crypto_quant/</code> sur la branche <code>claude/algo-quant-crypto-vvxwxo</code>.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var fmtPct = function (v, digits) {
+    if (v === null || v === undefined || Number.isNaN(v)) return "—";
+    digits = digits === undefined ? 1 : digits;
+    return (v * 100).toFixed(digits) + "%";
+  };
+  var fmtNum = function (v, digits) {
+    if (v === null || v === undefined || Number.isNaN(v)) return "—";
+    digits = digits === undefined ? 2 : digits;
+    return v.toFixed(digits);
+  };
+  var fmtDate = function (iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  };
+  var fmtDateTime = function (iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) + " " +
+      d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  var SERIES_COLORS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)"];
+
+  function resolveColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName.replace("var(", "").replace(")", "")).trim();
+  }
+
+  fetch("./dashboard.json")
+    .then(function (r) { return r.json(); })
+    .then(function (data) { render(data); })
+    .catch(function (err) {
+      document.getElementById("meta-generated").textContent = "Erreur de chargement des données.";
+      console.error(err);
+    });
+
+  function render(data) {
+    document.getElementById("meta-generated").innerHTML =
+      "Généré " + fmtDateTime(data.generated_at) + "<br><code>" + data.data_source + "</code>";
+
+    var oos = data.oos_summary;
+    var bt = data.backtest_summary;
+
+    var sharpeEl = document.getElementById("hero-sharpe");
+    var sharpeVal = oos.sharpe;
+    sharpeEl.textContent = sharpeVal === null ? "—" : fmtNum(sharpeVal, 2);
+    sharpeEl.classList.add(sharpeVal !== null && sharpeVal < 0 ? "bad" : "good");
+    document.getElementById("hero-sharpe-note").textContent =
+      sharpeVal !== null && sharpeVal < 0
+        ? "Négatif : aucun edge exploitable détecté sur ce jeu de données, coûts de transaction inclus."
+        : "Positif net des coûts de transaction.";
+
+    setKpi("kpi-cagr", fmtPct(oos.cagr), oos.cagr < 0 ? "bad" : "good");
+    setKpi("kpi-mdd", fmtPct(oos.max_drawdown), "bad");
+    setKpi("kpi-hit", fmtPct(oos.hit_rate, 1), "neutral");
+    setKpi("kpi-turnover", fmtPct(bt.avg_turnover, 1) + " / bougie", "neutral");
+    setKpi("kpi-folds", String(data.fold_results.length), "neutral");
+
+    document.getElementById("foot-pairs").textContent = data.config.pairs.join(", ");
+    document.getElementById("foot-tf").textContent = data.config.timeframe;
+    document.getElementById("foot-vol").textContent = fmtPct(data.config.target_vol, 2);
+    document.getElementById("foot-lev").textContent = data.config.max_leverage + "x";
+    document.getElementById("foot-cost").textContent = data.config.transaction_cost_bps + " bps";
+    document.getElementById("foot-dd").textContent = fmtPct(data.config.halt_drawdown, 0);
+
+    renderRegimeTable(data.current_state);
+    renderFoldTable(data.fold_results);
+    renderEquityChart(data.equity_curve, data.oos_equity_curve);
+    renderWeightsChart(data.weights_history, data.config.pairs);
+
+    window.addEventListener("resize", debounce(function () {
+      renderEquityChart(data.equity_curve, data.oos_equity_curve);
+      renderWeightsChart(data.weights_history, data.config.pairs);
+    }, 150));
+  }
+
+  function debounce(fn, ms) {
+    var t;
+    return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+
+  function setKpi(id, text, cls) {
+    var el = document.getElementById(id);
+    el.textContent = text;
+    el.classList.add(cls);
+  }
+
+  function renderRegimeTable(rows) {
+    var tbody = document.querySelector("#regime-table tbody");
+    tbody.innerHTML = "";
+    rows.forEach(function (row, i) {
+      var tr = document.createElement("tr");
+
+      var tdSym = document.createElement("td");
+      var symWrap = document.createElement("span");
+      symWrap.className = "sym";
+      var dot = document.createElement("span");
+      dot.className = "sym-dot";
+      dot.style.background = resolveColor(SERIES_COLORS[i % SERIES_COLORS.length]);
+      symWrap.appendChild(dot);
+      var symText = document.createElement("span");
+      symText.textContent = row.symbol;
+      symWrap.appendChild(symText);
+      tdSym.appendChild(symWrap);
+      tr.appendChild(tdSym);
+
+      var tdH = document.createElement("td");
+      tdH.className = "num";
+      tdH.textContent = fmtNum(row.hurst, 2);
+      tr.appendChild(tdH);
+
+      var tdRegime = document.createElement("td");
+      var pill = document.createElement("span");
+      pill.className = "pill " + (row.regime === "Tendance" ? "trend" : row.regime === "Retour a la moyenne" ? "revert" : "neutral");
+      pill.textContent = row.regime === "Retour a la moyenne" ? "Retour à la moyenne" : row.regime;
+      tdRegime.appendChild(pill);
+      tr.appendChild(tdRegime);
+
+      var tdW = document.createElement("td");
+      tdW.className = "num";
+      tdW.textContent = fmtPct(row.target_weight, 0);
+      tr.appendChild(tdW);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderFoldTable(folds) {
+    var tbody = document.querySelector("#fold-table tbody");
+    tbody.innerHTML = "";
+    folds.forEach(function (f, i) {
+      var tr = document.createElement("tr");
+      [
+        "Fold " + (i + 1),
+        fmtDate(f.train_start) + " → " + fmtDate(f.train_end),
+        fmtDate(f.test_start) + " → " + fmtDate(f.test_end),
+        f.chosen_ema,
+      ].forEach(function (text) {
+        var td = document.createElement("td");
+        td.textContent = text;
+        tr.appendChild(td);
+      });
+      var tdSharpe = document.createElement("td");
+      tdSharpe.className = "num";
+      tdSharpe.textContent = fmtNum(f.train_sharpe, 2);
+      tr.appendChild(tdSharpe);
+      tbody.appendChild(tr);
+    });
+  }
+
+  // --- Line chart: equity curves (indexed base 100), crosshair + tooltip ---
+  function renderEquityChart(seriesA, seriesB) {
+    var svg = document.getElementById("equity-chart");
+    var shell = document.getElementById("equity-chart-shell");
+    var tooltip = document.getElementById("equity-tooltip");
+    var width = shell.clientWidth || 600;
+    var height = 280;
+    var pad = { top: 14, right: 16, bottom: 26, left: 44 };
+
+    var idxA = indexSeries(seriesA);
+    var idxB = indexSeries(seriesB);
+
+    var allTimes = idxA.map(function (p) { return p.t; }).concat(idxB.map(function (p) { return p.t; }));
+    var minT = Math.min.apply(null, allTimes);
+    var maxT = Math.max.apply(null, allTimes);
+    var allV = idxA.map(function (p) { return p.v; }).concat(idxB.map(function (p) { return p.v; }));
+    var minV = Math.min.apply(null, allV);
+    var maxV = Math.max.apply(null, allV);
+    var vPad = (maxV - minV) * 0.08 || 1;
+    minV -= vPad; maxV += vPad;
+
+    var x = function (t) { return pad.left + (t - minT) / (maxT - minT) * (width - pad.left - pad.right); };
+    var y = function (v) { return pad.top + (1 - (v - minV) / (maxV - minV)) * (height - pad.top - pad.bottom); };
+
+    var svgns = "http://www.w3.org/2000/svg";
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.innerHTML = "";
+
+    var gridColor = resolveColor("var(--grid)");
+    var mutedColor = resolveColor("var(--text-muted)");
+    var s1 = resolveColor("var(--s1)");
+    var s2 = resolveColor("var(--s2)");
+
+    // y gridlines (5 ticks, nice round-ish values)
+    var yTicks = niceTicks(minV, maxV, 5);
+    yTicks.forEach(function (tick) {
+      var ly = y(tick);
+      var line = document.createElementNS(svgns, "line");
+      line.setAttribute("x1", pad.left); line.setAttribute("x2", width - pad.right);
+      line.setAttribute("y1", ly); line.setAttribute("y2", ly);
+      line.setAttribute("stroke", gridColor); line.setAttribute("stroke-width", "1");
+      svg.appendChild(line);
+
+      var label = document.createElementNS(svgns, "text");
+      label.setAttribute("x", pad.left - 8); label.setAttribute("y", ly + 3.5);
+      label.setAttribute("text-anchor", "end"); label.setAttribute("class", "axis-label");
+      label.setAttribute("fill", mutedColor);
+      label.textContent = Math.round(tick);
+      svg.appendChild(label);
+    });
+
+    // x ticks (5 evenly spaced)
+    var xTickCount = 5;
+    for (var i = 0; i <= xTickCount; i++) {
+      var tVal = minT + (maxT - minT) * (i / xTickCount);
+      var lx = x(tVal);
+      var label = document.createElementNS(svgns, "text");
+      label.setAttribute("x", lx); label.setAttribute("y", height - pad.bottom + 16);
+      label.setAttribute("text-anchor", i === 0 ? "start" : i === xTickCount ? "end" : "middle");
+      label.setAttribute("class", "axis-label"); label.setAttribute("fill", mutedColor);
+      label.textContent = fmtDate(new Date(tVal).toISOString());
+      svg.appendChild(label);
+    }
+
+    // baseline at 100
+    var base100 = y(100);
+    if (base100 > pad.top && base100 < height - pad.bottom) {
+      var baseLine = document.createElementNS(svgns, "line");
+      baseLine.setAttribute("x1", pad.left); baseLine.setAttribute("x2", width - pad.right);
+      baseLine.setAttribute("y1", base100); baseLine.setAttribute("y2", base100);
+      baseLine.setAttribute("stroke", resolveColor("var(--baseline)"));
+      baseLine.setAttribute("stroke-width", "1");
+      svg.appendChild(baseLine);
+    }
+
+    function drawLine(points, color) {
+      var d = points.map(function (p, i) {
+        return (i === 0 ? "M" : "L") + x(p.t).toFixed(2) + "," + y(p.v).toFixed(2);
+      }).join(" ");
+      var path = document.createElementNS(svgns, "path");
+      path.setAttribute("d", d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linejoin", "round");
+      path.setAttribute("stroke-linecap", "round");
+      svg.appendChild(path);
+
+      var last = points[points.length - 1];
+      var dot = document.createElementNS(svgns, "circle");
+      dot.setAttribute("cx", x(last.t)); dot.setAttribute("cy", y(last.v));
+      dot.setAttribute("r", 4.5);
+      dot.setAttribute("fill", color);
+      dot.setAttribute("stroke", resolveColor("var(--surface)"));
+      dot.setAttribute("stroke-width", "2");
+      svg.appendChild(dot);
+    }
+
+    drawLine(idxA, s1);
+    drawLine(idxB, s2);
+
+    // crosshair + tooltip
+    var crosshair = document.createElementNS(svgns, "line");
+    crosshair.setAttribute("y1", pad.top); crosshair.setAttribute("y2", height - pad.bottom);
+    crosshair.setAttribute("stroke", mutedColor); crosshair.setAttribute("stroke-width", "1");
+    crosshair.setAttribute("stroke-dasharray", "3,3");
+    crosshair.style.display = "none";
+    svg.appendChild(crosshair);
+
+    var hit = document.createElementNS(svgns, "rect");
+    hit.setAttribute("x", pad.left); hit.setAttribute("y", pad.top);
+    hit.setAttribute("width", Math.max(0, width - pad.left - pad.right));
+    hit.setAttribute("height", Math.max(0, height - pad.top - pad.bottom));
+    hit.setAttribute("fill", "transparent");
+    svg.appendChild(hit);
+
+    function nearestIndex(points, tVal) {
+      var lo = 0, hi = points.length - 1;
+      while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        if (points[mid].t < tVal) lo = mid + 1; else hi = mid;
+      }
+      return lo;
+    }
+
+    hit.addEventListener("pointermove", function (evt) {
+      var rect = svg.getBoundingClientRect();
+      var scaleX = width / rect.width;
+      var px = (evt.clientX - rect.left) * scaleX;
+      var tVal = minT + (px - pad.left) / (width - pad.left - pad.right) * (maxT - minT);
+      var ia = nearestIndex(idxA, tVal);
+      var ib = nearestIndex(idxB, tVal);
+      var pa = idxA[ia], pb = idxB[ib];
+
+      crosshair.style.display = "";
+      crosshair.setAttribute("x1", x(pa.t)); crosshair.setAttribute("x2", x(pa.t));
+
+      tooltip.innerHTML =
+        '<div class="t-date">' + fmtDateTime(new Date(pa.t).toISOString()) + '</div>' +
+        '<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:' + s1 + '"></span>Backtest</span><span class="t-val">' + pa.v.toFixed(1) + '</span></div>' +
+        '<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:' + s2 + '"></span>Hors-éch.</span><span class="t-val">' + pb.v.toFixed(1) + '</span></div>';
+
+      var shellRect = shell.getBoundingClientRect();
+      var localX = (evt.clientX - shellRect.left);
+      var localY = (evt.clientY - shellRect.top);
+      var ttW = 190;
+      tooltip.style.left = Math.min(Math.max(0, localX + 14), shell.clientWidth - ttW) + "px";
+      tooltip.style.top = Math.max(0, localY - 60) + "px";
+      tooltip.classList.add("show");
+    });
+    hit.addEventListener("pointerleave", function () {
+      crosshair.style.display = "none";
+      tooltip.classList.remove("show");
+    });
+  }
+
+  function indexSeries(points) {
+    if (!points.length) return [];
+    var first = points[0].v;
+    return points.map(function (p) {
+      return { t: new Date(p.t).getTime(), v: (p.v / first) * 100 };
+    });
+  }
+
+  function niceTicks(min, max, count) {
+    var range = max - min;
+    var rawStep = range / count;
+    var mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    var norm = rawStep / mag;
+    var step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    var start = Math.ceil(min / step) * step;
+    var ticks = [];
+    for (var v = start; v <= max; v += step) ticks.push(v);
+    return ticks;
+  }
+
+  // --- Stacked area chart: allocation over time ---
+  function renderWeightsChart(weightsHistory, pairs) {
+    var svg = document.getElementById("weights-chart");
+    var shell = document.getElementById("weights-chart-shell");
+    var tooltip = document.getElementById("weights-tooltip");
+    var legend = document.getElementById("weights-legend");
+    var width = shell.clientWidth || 600;
+    var height = 240;
+    var pad = { top: 10, right: 16, bottom: 26, left: 40 };
+
+    var times = weightsHistory[pairs[0]].map(function (p) { return new Date(p.t).getTime(); });
+    var n = times.length;
+    var minT = times[0], maxT = times[n - 1];
+
+    var stacks = times.map(function (t, i) {
+      var cum = 0;
+      var bands = pairs.map(function (sym) {
+        var v = weightsHistory[sym][i].v;
+        var from = cum;
+        cum += v;
+        return { from: from, to: cum, v: v };
+      });
+      return { t: t, bands: bands, total: cum };
+    });
+
+    var maxTotal = Math.max.apply(null, stacks.map(function (s) { return s.total; }));
+    var yMax = Math.min(1, Math.max(0.2, Math.ceil(maxTotal * 10) / 10));
+
+    var x = function (t) { return pad.left + (t - minT) / (maxT - minT) * (width - pad.left - pad.right); };
+    var y = function (v) { return pad.top + (1 - v / yMax) * (height - pad.top - pad.bottom); };
+
+    var svgns = "http://www.w3.org/2000/svg";
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.innerHTML = "";
+
+    var gridColor = resolveColor("var(--grid)");
+    var mutedColor = resolveColor("var(--text-muted)");
+    var colors = SERIES_COLORS.map(resolveColor);
+
+    var yTicks = [0, yMax / 2, yMax];
+    yTicks.forEach(function (tick) {
+      var ly = y(tick);
+      var line = document.createElementNS(svgns, "line");
+      line.setAttribute("x1", pad.left); line.setAttribute("x2", width - pad.right);
+      line.setAttribute("y1", ly); line.setAttribute("y2", ly);
+      line.setAttribute("stroke", gridColor); line.setAttribute("stroke-width", "1");
+      svg.appendChild(line);
+
+      var label = document.createElementNS(svgns, "text");
+      label.setAttribute("x", pad.left - 8); label.setAttribute("y", ly + 3.5);
+      label.setAttribute("text-anchor", "end"); label.setAttribute("class", "axis-label");
+      label.setAttribute("fill", mutedColor);
+      label.textContent = Math.round(tick * 100) + "%";
+      svg.appendChild(label);
+    });
+
+    var xTickCount = 5;
+    for (var i = 0; i <= xTickCount; i++) {
+      var tVal = minT + (maxT - minT) * (i / xTickCount);
+      var lx = x(tVal);
+      var label = document.createElementNS(svgns, "text");
+      label.setAttribute("x", lx); label.setAttribute("y", height - pad.bottom + 16);
+      label.setAttribute("text-anchor", i === 0 ? "start" : i === xTickCount ? "end" : "middle");
+      label.setAttribute("class", "axis-label"); label.setAttribute("fill", mutedColor);
+      label.textContent = fmtDate(new Date(tVal).toISOString());
+      svg.appendChild(label);
+    }
+
+    pairs.forEach(function (sym, si) {
+      var color = colors[si % colors.length];
+      var top = stacks.map(function (s) { return { t: s.t, v: s.bands[si].to }; });
+      var bottom = stacks.map(function (s) { return { t: s.t, v: s.bands[si].from }; }).reverse();
+      var pts = top.concat(bottom);
+      var d = pts.map(function (p, i) {
+        return (i === 0 ? "M" : "L") + x(p.t).toFixed(2) + "," + y(p.v).toFixed(2);
+      }).join(" ") + " Z";
+      var path = document.createElementNS(svgns, "path");
+      path.setAttribute("d", d);
+      path.setAttribute("fill", color);
+      path.setAttribute("fill-opacity", "0.68");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", "1");
+      svg.appendChild(path);
+    });
+
+    legend.innerHTML = "";
+    pairs.forEach(function (sym, si) {
+      var item = document.createElement("span");
+      item.className = "legend-item";
+      var sw = document.createElement("span");
+      sw.className = "legend-swatch area";
+      sw.style.background = colors[si % colors.length];
+      item.appendChild(sw);
+      var txt = document.createElement("span");
+      txt.textContent = sym;
+      item.appendChild(txt);
+      legend.appendChild(item);
+    });
+
+    var hit = document.createElementNS(svgns, "rect");
+    hit.setAttribute("x", pad.left); hit.setAttribute("y", pad.top);
+    hit.setAttribute("width", Math.max(0, width - pad.left - pad.right));
+    hit.setAttribute("height", Math.max(0, height - pad.top - pad.bottom));
+    hit.setAttribute("fill", "transparent");
+    svg.appendChild(hit);
+
+    var crosshair = document.createElementNS(svgns, "line");
+    crosshair.setAttribute("y1", pad.top); crosshair.setAttribute("y2", height - pad.bottom);
+    crosshair.setAttribute("stroke", mutedColor); crosshair.setAttribute("stroke-width", "1");
+    crosshair.setAttribute("stroke-dasharray", "3,3");
+    crosshair.style.display = "none";
+    svg.appendChild(crosshair);
+
+    function nearestIndex(tVal) {
+      var lo = 0, hi = stacks.length - 1;
+      while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        if (stacks[mid].t < tVal) lo = mid + 1; else hi = mid;
+      }
+      return lo;
+    }
+
+    hit.addEventListener("pointermove", function (evt) {
+      var rect = svg.getBoundingClientRect();
+      var scaleX = width / rect.width;
+      var px = (evt.clientX - rect.left) * scaleX;
+      var tVal = minT + (px - pad.left) / (width - pad.left - pad.right) * (maxT - minT);
+      var idx = nearestIndex(tVal);
+      var s = stacks[idx];
+
+      crosshair.style.display = "";
+      crosshair.setAttribute("x1", x(s.t)); crosshair.setAttribute("x2", x(s.t));
+
+      var rows = pairs.map(function (sym, si) {
+        return '<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:' + colors[si % colors.length] + '"></span>' + sym + '</span><span class="t-val">' + Math.round(s.bands[si].v * 100) + '%</span></div>';
+      }).join("");
+      var cashPct = Math.round((1 - s.total) * 100);
+      var cashRow = '<div class="t-row"><span class="t-key">Cash</span><span class="t-val">' + Math.max(0, cashPct) + '%</span></div>';
+
+      tooltip.innerHTML = '<div class="t-date">' + fmtDateTime(new Date(s.t).toISOString()) + '</div>' + rows + cashRow;
+
+      var shellRect = shell.getBoundingClientRect();
+      var localX = (evt.clientX - shellRect.left);
+      var localY = (evt.clientY - shellRect.top);
+      var ttW = 190;
+      tooltip.style.left = Math.min(Math.max(0, localX + 14), shell.clientWidth - ttW) + "px";
+      tooltip.style.top = Math.max(0, localY - 90) + "px";
+      tooltip.classList.add("show");
+    });
+    hit.addEventListener("pointerleave", function () {
+      crosshair.style.display = "none";
+      tooltip.classList.remove("show");
+    });
+  }
+})();
+</script>
+</body>
+</html>
