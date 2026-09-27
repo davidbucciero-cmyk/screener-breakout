@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 screener/data/screener.db
 screener/logs/
+.venv/
+*.env
+.env
