@@ -11,6 +11,22 @@ ici ne s'en approche en termes de performance ou de sophistication - c'est
 un systeme construit a partir de techniques quantitatives publiques et
 documentees.
 
+## Dashboard
+
+`crypto_quant/dashboard/index.html` : dashboard HTML autonome (aucune
+dependance externe hors CDN) qui affiche la performance walk-forward, le
+regime actuel par actif, l'allocation dans le temps et la stabilite des
+hyperparametres entre folds. Se regenere avec :
+
+```bash
+python -m crypto_quant.dashboard  # ecrit crypto_quant/dashboard/dashboard.json
+```
+
+Par defaut construit sur donnees synthetiques (aucun acces reseau requis) -
+le dashboard l'indique explicitement en banniere. Pour un dashboard sur
+donnees Kraken reelles, remplacer `price_data` dans `dashboard.py` par un
+vrai historique `CCXTDataFeed.get_universe_history(...)`.
+
 ## Etat d'avancement
 
 - [x] Etape 1 - Donnees (`data.py`, `synthetic.py`, `config.py`)
