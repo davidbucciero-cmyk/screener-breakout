@@ -6,8 +6,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from crypto_quant.backtest import BacktestConfig, run_backtest
+from crypto_quant.backtest import BacktestConfig, compute_live_weights, run_backtest
 from crypto_quant.synthetic import synthetic_dataframe
 
 FIXED_END_MS = 1_700_000_000_000
@@ -103,6 +104,24 @@ def test_drawdown_circuit_breaker_halts_during_backtest_crash():
     resumed = result.trading_allowed_history.iloc[first_halt_idx:]
     first_resume_offset = resumed.values.tolist().index(True)
     assert first_resume_offset == cfg.circuit_breaker_cooldown
+
+
+def test_compute_live_weights_returns_series_summing_to_at_most_max_leverage():
+    price_data = _small_multi_asset_universe()
+    cfg = BacktestConfig(max_leverage=1.0)
+
+    weights = compute_live_weights(price_data, cfg)
+
+    assert set(weights.index) == set(price_data.keys())
+    assert (weights >= 0).all(), "Long-only : jamais de poids negatif"
+    assert weights.sum() <= 1.0 + 1e-9
+
+
+def test_compute_live_weights_raises_on_insufficient_history():
+    price_data = {"TINY": synthetic_dataframe(10, end_ms=FIXED_END_MS, drift=0.0, gbm_vol=0.01, seed=1)}
+    cfg = BacktestConfig()  # fenetres par defaut (100) >> 10 bougies disponibles
+    with pytest.raises(ValueError):
+        compute_live_weights(price_data, cfg)
 
 
 if __name__ == "__main__":

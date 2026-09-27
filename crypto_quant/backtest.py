@@ -104,6 +104,35 @@ def _align_universe(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) ->
     return {symbol: df.loc[common_index] for symbol, df in per_symbol.items()}
 
 
+def compute_live_weights(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> pd.Series:
+    """Calcule les poids cibles ACTUELS (derniere bougie disponible), avec le
+    meme pipeline que run_backtest (signaux -> score composite -> poids
+    long-only -> tilt vol inverse -> ciblage de volatilite), pour une
+    decision de trading live (etape 6).
+
+    Ne calcule PAS le coupe-circuit de drawdown : celui-ci a besoin de
+    l'historique d'equity de la STRATEGIE (pas du marche), qui doit etre
+    suivi/persiste separement en production (cf. execution.py,
+    save_breaker_state/load_breaker_state) et applique par l'appelant apres
+    ce calcul, pas ici.
+    """
+    aligned = _align_universe(price_data, cfg)
+    symbols = list(aligned.keys())
+    if not symbols or len(next(iter(aligned.values()))) == 0:
+        raise ValueError("Pas assez de donnees alignees apres warm-up des signaux pour calculer des poids live")
+
+    raw_scores = build_universe_scores({s: aligned[s][["hurst", "ema_trend", "ou_signal"]] for s in symbols})
+    vol_df = pd.DataFrame({s: aligned[s]["ewma_vol"] for s in symbols})
+
+    last_scores = raw_scores.iloc[-1]
+    last_vols = vol_df.iloc[-1]
+
+    w_score = target_weights_row(last_scores, top_n=cfg.top_n)
+    w_tilted = inverse_vol_weights(w_score, last_vols)
+    leverage = volatility_target_leverage(w_tilted, last_vols, target_vol=cfg.target_vol, max_leverage=cfg.max_leverage)
+    return w_tilted * leverage
+
+
 def run_backtest(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> BacktestResult:
     """Simule la strategie complete sur l'historique fourni.
 

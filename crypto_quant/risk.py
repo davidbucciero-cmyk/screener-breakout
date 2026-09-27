@@ -178,3 +178,28 @@ class DrawdownCircuitBreaker:
         self.reset()
         allowed = [self.step(v) for v in equity_curve.values]
         return pd.Series(allowed, index=equity_curve.index, name="trading_allowed")
+
+    def to_dict(self) -> dict:
+        """Serialise l'etat interne (pour persistance entre executions live,
+        cf. execution.py : un processus relance periodiquement doit retrouver
+        son etat de coupe-circuit, pas repartir a zero a chaque fois)."""
+        return {
+            "halt_drawdown": self.halt_drawdown,
+            "resume_drawdown": self.resume_drawdown,
+            "cooldown_periods": self.cooldown_periods,
+            "running_max": self._running_max,
+            "halted": self._halted,
+            "periods_since_halt": self._periods_since_halt,
+        }
+
+    @classmethod
+    def from_dict(cls, state: dict) -> "DrawdownCircuitBreaker":
+        breaker = cls(
+            halt_drawdown=state["halt_drawdown"],
+            resume_drawdown=state["resume_drawdown"],
+            cooldown_periods=state["cooldown_periods"],
+        )
+        breaker._running_max = state["running_max"]
+        breaker._halted = state["halted"]
+        breaker._periods_since_halt = state["periods_since_halt"]
+        return breaker

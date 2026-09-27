@@ -18,7 +18,54 @@ documentees.
 - [x] Etape 3 - Combinaison des signaux (`portfolio.py`)
 - [x] Etape 4 - Risque et sizing (`risk.py`)
 - [x] Etape 5 - Backtest walk-forward (`backtest.py`, `metrics.py`)
-- [ ] Etape 6 - Execution (dry-run par defaut)
+- [x] Etape 6 - Execution (`execution.py`)
+
+## Etape 6 - Execution (dry-run par defaut, live derriere 3 barrieres)
+
+`LiveExecutor` calcule et passe les ordres de rebalancement (poids cibles ->
+positions actuelles -> ordres achat/vente, avec un seuil de notionnel
+minimum). Defense en profondeur deliberee : le live REEL exige
+SIMULTANEMENT (1) `dry_run=False` explicite, (2) la variable d'environnement
+`CRYPTO_QUANT_CONFIRM_LIVE_TRADING="j-accepte-le-risque"`, (3) des cles API
+valides en variables d'environnement (`KRAKEN_API_KEY`/`KRAKEN_API_SECRET`,
+jamais en dur dans le code). Un `dry_run=False` accidentel seul ne suffit
+jamais a declencher un ordre reel.
+
+`compute_live_weights` (dans `backtest.py`) reutilise le meme pipeline que
+`run_backtest` pour calculer les poids cibles a partir de la derniere
+bougie disponible.
+
+**Perimetre assume, pas cache** : le coupe-circuit de drawdown a besoin de
+suivre l'equity de la strategie dans le temps. `save_breaker_state` /
+`load_breaker_state` permettent de persister son etat entre deux executions
+d'un processus relance periodiquement (cron, etc.), mais l'orchestration
+complete d'une boucle de production (frequence d'execution, alerting en cas
+d'echec, service systeme) reste a construire selon l'infrastructure de
+deploiement de l'utilisateur - ce module fournit les briques necessaires,
+pas un service cle en main.
+
+### Exemple d'usage (dry-run)
+
+```python
+from crypto_quant.execution import LiveExecutor
+from crypto_quant.backtest import BacktestConfig, compute_live_weights
+from crypto_quant.data import CCXTDataFeed
+
+cfg = BacktestConfig()
+feed = CCXTDataFeed(exchange_id="kraken")
+price_data = feed.get_universe_history(["BTC/USD", "ETH/USD"], "1h", history_days=90)
+
+weights = compute_live_weights(price_data, cfg)
+
+executor = LiveExecutor(dry_run=True)  # jamais de vrai ordre sans les 3 barrieres du live
+orders = executor.compute_rebalance_orders(
+    current_holdings={},  # a recuperer via l'API du compte en usage reel
+    target_weights=weights.to_dict(),
+    prices={s: df["close"].iloc[-1] for s, df in price_data.items()},
+    total_equity=10_000.0,
+)
+results = executor.execute_orders(orders)
+```
 
 ## Etape 5 - Backtest et validation walk-forward
 
