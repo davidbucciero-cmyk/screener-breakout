@@ -29,7 +29,7 @@ def main():
     log.info('=' * 60)
 
     log.info('STEP 1 - Prix historiques...')
-    prices = universe.fetch_prices()
+    prices = universe.fetch_prices(tickers=universe.all_tickers())
     if prices.empty:
         log.error('Pas de donnees, arret.')
         return

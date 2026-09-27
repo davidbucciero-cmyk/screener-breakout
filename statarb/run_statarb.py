@@ -49,8 +49,8 @@ def main():
     s_scores, half_lives = ou_signal.compute_s_scores(residuals)
     s_scores.to_csv(os.path.join(DATA_DIR, 'pca_s_scores.csv'))
 
-    log.info('STEP 4 - Backtest portefeuille (dollar-neutre, poids egaux sur positions actives)...')
-    metrics, daily_ret, positions = pca_backtest.run_pca_backtest(residuals, s_scores)
+    log.info('STEP 4 - Backtest portefeuille (dollar-neutre, poids egaux sur positions actives, frais IBKR)...')
+    metrics, daily_ret, positions = pca_backtest.run_pca_backtest(residuals, s_scores, prices=prices)
     if metrics:
         import json
         with open(os.path.join(DATA_DIR, 'pca_backtest_results.json'), 'w') as f:

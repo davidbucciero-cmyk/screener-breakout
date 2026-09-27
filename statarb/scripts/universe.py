@@ -1,6 +1,8 @@
 import os
 import logging
+from io import StringIO
 import pandas as pd
+import requests
 import yfinance as yf
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data')
@@ -29,8 +31,10 @@ SECTOR_UNIVERSE = {
     'Telecom': ['VZ', 'T', 'TMUS'],
 }
 
-LOOKBACK_PERIOD = '3y'
+LOOKBACK_PERIOD = '10y'
 MIN_HISTORY_DAYS = 500
+
+SP500_WIKI_URL = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
 
 
 def all_tickers():
@@ -42,8 +46,25 @@ def all_tickers():
     return seen
 
 
+def sp500_tickers():
+    """Liste des ~500 tickers du S&P 500, recuperee depuis Wikipedia (symboles
+    normalises pour yfinance, ex. BRK.B -> BRK-B). Retombe sur `all_tickers()`
+    (univers restreint sectoriel) si la page n'est pas accessible."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; screener-breakout/1.0)'}
+        resp = requests.get(SP500_WIKI_URL, headers=headers, timeout=20)
+        resp.raise_for_status()
+        table = pd.read_html(StringIO(resp.text))[0]
+        tickers = table['Symbol'].str.replace('.', '-', regex=False).tolist()
+        log.info(f'{len(tickers)} tickers S&P 500 recuperes depuis Wikipedia')
+        return tickers
+    except Exception as e:
+        log.warning(f'Echec recuperation S&P 500 ({e}), repli sur l\'univers sectoriel restreint')
+        return all_tickers()
+
+
 def fetch_prices(tickers=None, period=LOOKBACK_PERIOD):
-    tickers = tickers or all_tickers()
+    tickers = tickers or sp500_tickers()
     log.info(f'Telechargement prix ajustes ({period}) pour {len(tickers)} tickers...')
     raw = yf.download(tickers, period=period, interval='1d', group_by='ticker',
                        auto_adjust=True, threads=True, progress=False)
@@ -55,7 +76,6 @@ def fetch_prices(tickers=None, period=LOOKBACK_PERIOD):
         except KeyError:
             close = pd.Series(dtype=float)
         if len(close) < MIN_HISTORY_DAYS:
-            log.warning(f'{t} exclu : seulement {len(close)} jours d\'historique')
             continue
         prices[t] = close
 
@@ -64,7 +84,15 @@ def fetch_prices(tickers=None, period=LOOKBACK_PERIOD):
         return pd.DataFrame()
 
     df = pd.DataFrame(prices).sort_index()
-    df = df.ffill(limit=3).dropna()
+    # Comble les trous ponctuels (jours feries locaux, etc.), puis ecarte les
+    # tickers dont l'historique reste incomplet plutot que de supprimer des
+    # journees entieres pour tout l'univers a cause d'un seul titre lacunaire.
+    df = df.ffill(limit=3)
+    n_before = df.shape[1]
+    df = df.dropna(axis=1)
+    if df.shape[1] < n_before:
+        log.warning(f'{n_before - df.shape[1]} tickers exclus (historique lacunaire apres ffill)')
+    df = df.dropna(axis=0)
     log.info(f'Prix retenus : {df.shape[1]} tickers x {df.shape[0]} jours ({df.index.min().date()} -> {df.index.max().date()})')
     return df
 

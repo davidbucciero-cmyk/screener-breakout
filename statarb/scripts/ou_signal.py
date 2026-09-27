@@ -19,54 +19,59 @@ MAX_HALF_LIFE_DAYS = 30
 TRADING_DAYS_YEAR = 252
 
 
-def _fit_ou_ar1(cum_resid):
-    """AR(1) sur le residu cumule -> (kappa annualise, m, sigma_eq, half-life en jours)."""
-    y = cum_resid[1:]
-    x = cum_resid[:-1]
-    X = np.column_stack([np.ones(len(x)), x])
-    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-    a, b = beta[0], beta[1]
-    if not (0 < b < 1):
-        return None
-    resid_ar1 = y - X @ beta
-    var_eps = np.var(resid_ar1, ddof=2)
+def _fit_ou_ar1_rolling(cum_resid, window):
+    """AR(1) glissant sur le residu cumule, entierement vectorise par pandas.rolling.
+
+    Le score AR(1) X_t = a + b*X_{t-1} + eps est invariant a une translation
+    constante de X (a et b ne changent pas, m := a/(1-b) se translate avec X),
+    donc on peut faire glisser la regression directement sur la somme cumulee
+    globale du residu plutot que de la recalculer a chaque fenetre : seul le
+    s-score final, qui est une difference (X_t - m), est physiquement correct.
+    """
+    x = cum_resid.shift(1)
+    y = cum_resid
+    pair_window = window - 1
+
+    cov_xy = y.rolling(pair_window).cov(x)
+    var_x = x.rolling(pair_window).var()
+    var_y = y.rolling(pair_window).var()
+    mean_x = x.rolling(pair_window).mean()
+    mean_y = y.rolling(pair_window).mean()
+
+    b = cov_xy / var_x
+    a = mean_y - b * mean_x
+    var_eps = var_y - b * cov_xy
+
+    valid = (b > 0) & (b < 1) & (var_eps > 0)
+    b = b.where(valid)
 
     kappa = -np.log(b) * TRADING_DAYS_YEAR
     m = a / (1 - b)
-    sigma2 = var_eps * 2 * kappa / (1 - b ** 2)
-    if sigma2 <= 0 or kappa <= 0:
-        return None
-    sigma_eq = np.sqrt(sigma2 / (2 * kappa))
+    sigma_eq = np.sqrt(var_eps / (1 - b ** 2))
     half_life_days = np.log(2) / kappa * TRADING_DAYS_YEAR
-    return kappa, m, sigma_eq, half_life_days
+    s_score = (y - m) / sigma_eq
+    return s_score, half_life_days
 
 
 def compute_s_scores(residuals, window=OU_WINDOW, max_half_life_days=MAX_HALF_LIFE_DAYS):
     """Pour chaque jour et chaque action : s-score = (X_t - m) / sigma_eq (eq. 11, Velissaris),
-    ou X_t est le residu cumule sur les `window` derniers jours. None/NaN si la vitesse de
-    retour a la moyenne est trop lente (half-life > max_half_life_days) ou non estimable.
+    ou X_t est le residu cumule. None/NaN si la vitesse de retour a la moyenne est trop
+    lente (half-life > max_half_life_days) ou non estimable.
     """
-    dates = residuals.index
-    tickers = residuals.columns
-    s_scores = pd.DataFrame(index=dates, columns=tickers, dtype=float)
-    half_lives = pd.DataFrame(index=dates, columns=tickers, dtype=float)
+    s_scores = pd.DataFrame(index=residuals.index, columns=residuals.columns, dtype=float)
+    half_lives = pd.DataFrame(index=residuals.index, columns=residuals.columns, dtype=float)
 
-    for ticker in tickers:
+    for ticker in residuals.columns:
         series = residuals[ticker].dropna()
         if len(series) < window + 5:
             continue
-        values = series.values
-        idx = series.index
-        for i in range(window, len(values)):
-            cum_resid = np.cumsum(values[i - window:i])
-            fit = _fit_ou_ar1(cum_resid)
-            if fit is None:
-                continue
-            kappa, m, sigma_eq, hl = fit
-            if hl > max_half_life_days:
-                continue
-            s_scores.loc[idx[i], ticker] = (cum_resid[-1] - m) / sigma_eq
-            half_lives.loc[idx[i], ticker] = hl
+        cum_resid = series.cumsum()
+        s_score, half_life = _fit_ou_ar1_rolling(cum_resid, window)
+        too_slow = half_life > max_half_life_days
+        s_score = s_score.where(~too_slow)
+        half_life = half_life.where(~too_slow)
+        s_scores.loc[s_score.index, ticker] = s_score
+        half_lives.loc[half_life.index, ticker] = half_life
 
     n_signals = s_scores.notna().sum().sum()
     log.info(f'{n_signals} s-scores calcules (fenetre={window}j, half-life max={max_half_life_days}j)')
