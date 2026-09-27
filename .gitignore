@@ -6,3 +6,5 @@ screener/logs/
 .venv/
 *.env
 .env
+.pytest_cache/
+crypto_quant/data_cache/
