@@ -11,6 +11,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from unittest.mock import patch
+
+import ccxt
 import pandas as pd
 
 from crypto_quant.data import CCXTDataFeed, resample_trades_to_ohlcv
@@ -213,6 +216,51 @@ def test_resample_trades_to_ohlcv_skips_bars_with_no_trades():
     bars = resample_trades_to_ohlcv(trades, timeframe_seconds=3600)
 
     assert len(bars) == 2, "les bougies vides intermediaires doivent etre absentes, pas forward-fillees"
+
+
+def test_fetch_trades_paginated_retries_on_transient_network_error():
+    """Bug reel trouve en lancant un fetch d'historique profond : une simple
+    coupure reseau transitoire (proxy coupe un instant) faisait planter tout
+    le processus, perdant des heures de progression en memoire faute de
+    retry. _call_with_retry doit absorber quelques erreurs transitoires
+    (ccxt.NetworkError) avant de reussir."""
+    n = 50
+    trades = generate_synthetic_trades(n, start_ms=1_700_000_000_000, seed=6, same_timestamp_every=0)
+    fake_exchange = FakeTradesExchange(trades)
+
+    call_count = {"n": 0}
+    original_fetch = fake_exchange.fetch_trades
+
+    def flaky_fetch_trades(symbol, since, limit):
+        call_count["n"] += 1
+        if call_count["n"] <= 2:
+            raise ccxt.NetworkError("coupure reseau simulee")
+        return original_fetch(symbol, since=since, limit=limit)
+
+    fake_exchange.fetch_trades = flaky_fetch_trades
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+    with patch("crypto_quant.data.time.sleep"):  # pas d'attente reelle du backoff dans les tests
+        result = feed._fetch_trades_paginated("BTC/USD", since_ms=1_700_000_000_000, limit=500)
+
+    assert len(result) == n
+    assert call_count["n"] > 2, "doit avoir reessaye apres les erreurs simulees"
+
+
+def test_fetch_trades_paginated_gives_up_after_max_retries():
+    def always_fails(symbol, since, limit):
+        raise ccxt.NetworkError("coupure reseau simulee, permanente")
+
+    fake_exchange = FakeTradesExchange([])
+    fake_exchange.fetch_trades = always_fails
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+    with patch("crypto_quant.data.time.sleep"):
+        try:
+            feed._fetch_trades_paginated("BTC/USD", since_ms=1_700_000_000_000, limit=500)
+            assert False, "aurait du finir par relever ccxt.NetworkError"
+        except ccxt.NetworkError:
+            pass
 
 
 def test_get_history_from_trades_returns_ohlcv_like_format():

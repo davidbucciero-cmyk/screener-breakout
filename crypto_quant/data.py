@@ -32,6 +32,35 @@ def build_exchange(exchange_id: str = "kraken"):
     return exchange_class({"enableRateLimit": True})
 
 
+def _call_with_retry(fn, max_retries: int = 5, base_delay: float = 2.0):
+    """Reessaie un appel reseau avec backoff exponentiel sur une erreur
+    reseau TRANSITOIRE (ccxt.NetworkError et sous-classes : proxy coupe,
+    timeout, DNS...). Ne rattrape jamais une erreur applicative (mauvais
+    symbole, auth, etc.) pour ne pas masquer un vrai bug derriere des
+    reessais silencieux.
+
+    Trouve en conditions reelles : un fetch d'historique profond (des
+    heures d'appels sequentiels) a plante des le debut sur une coupure
+    proxy transitoire (connexion refusee), perdant toute la progression en
+    memoire faute de retry. Necessaire des qu'une boucle de pagination
+    tourne assez longtemps pour croiser un incident reseau transitoire.
+    """
+    import ccxt
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            return fn()
+        except ccxt.NetworkError:
+            if attempt == max_retries:
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            log.warning(
+                "Erreur reseau transitoire (tentative %d/%d), nouvel essai dans %.0fs",
+                attempt, max_retries, delay,
+            )
+            time.sleep(delay)
+
+
 def resample_trades_to_ohlcv(trades: pd.DataFrame, timeframe_seconds: int) -> pd.DataFrame:
     """Reconstruit des bougies OHLCV a partir de trades individuels.
 
@@ -110,7 +139,7 @@ class CCXTDataFeed:
         tf_ms = tf_seconds * 1000
 
         while True:
-            batch = self.exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=cursor, limit=limit)
+            batch = _call_with_retry(lambda: self.exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=cursor, limit=limit))
             if not batch:
                 break
             all_rows.extend(batch)
@@ -264,7 +293,7 @@ class CCXTDataFeed:
         cursor = since_ms
 
         while True:
-            batch = self.exchange.fetch_trades(symbol, since=cursor, limit=limit)
+            batch = _call_with_retry(lambda: self.exchange.fetch_trades(symbol, since=cursor, limit=limit))
             if not batch:
                 break
             new_trades = [t for t in batch if t["id"] not in seen_ids]
