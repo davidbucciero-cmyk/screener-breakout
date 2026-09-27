@@ -64,9 +64,37 @@ def test_get_history_only_fetches_new_candles_on_second_call():
     df2 = feed.get_history("ETH/USD", "1h", history_days=n // 24 + 1)
 
     assert len(df2) == n
-    # Le "since" du premier appel doit demarrer bien apres le debut de
-    # l'historique deja en cache (on ne re-telecharge pas tout).
-    assert call_log[0] > rows[0][0]
+    # history_days (n//24+1 jours) demande legerement plus que ce que
+    # l'exchange peut fournir (n heures) : le premier appel logue est donc
+    # une tentative de backfill (avant le debut reel de l'historique, qui ne
+    # renvoie rien - l'exchange n'a simplement rien de plus ancien). C'est le
+    # dernier appel qui doit demarrer bien apres le debut de l'historique
+    # deja en cache (on ne re-telecharge pas tout en avant).
+    assert call_log[-1] > rows[0][0]
+
+
+def test_get_history_backfills_when_more_history_requested_later():
+    """Un premier appel avec un history_days petit ne doit pas plafonner
+    silencieusement un appel ulterieur avec un history_days plus grand : le
+    cache doit etre complete en arriere, pas seulement en avant.
+
+    n=800 heures (~33.3 jours) de donnees disponibles cote exchange ; les deux
+    appels demandent nettement moins que ca pour rester loin de la limite
+    reelle de l'historique disponible (sinon le "manque" de donnees plus
+    anciennes vient de l'exchange lui-meme, pas d'un cache incomplet)."""
+    n = 800
+    rows = generate_synthetic_ohlcv(n, timeframe_seconds=3600, seed=13)
+    fake_exchange = FakeExchange(rows)
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+
+    small = feed.get_history("BTC/USD", "1h", history_days=5)
+    full = feed.get_history("BTC/USD", "1h", history_days=20)
+
+    assert len(full) > len(small)
+    assert full.index[0] < small.index[0]
+    assert full.index.is_monotonic_increasing
+    assert not full.index.has_duplicates
 
 
 def test_get_universe_history_returns_all_symbols():
@@ -99,6 +127,10 @@ if __name__ == "__main__":
 
     setup_function(None)
     test_get_history_only_fetches_new_candles_on_second_call()
+    teardown_function(None)
+
+    setup_function(None)
+    test_get_history_backfills_when_more_history_requested_later()
     teardown_function(None)
 
     setup_function(None)

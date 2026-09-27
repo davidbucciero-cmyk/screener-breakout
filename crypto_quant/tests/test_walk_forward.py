@@ -63,6 +63,36 @@ def test_walk_forward_validator_produces_oos_curve_and_fold_results():
         assert fold.test_start <= fold.test_end
 
 
+def test_select_best_config_excludes_configs_that_cannot_fit_test_window():
+    """Bug trouve sur donnees reelles Kraken (1d, ~700 jours) : une config a
+    grande fenetre de warm-up (hurst/ou/ema) peut avoir le meilleur Sharpe
+    train (justement parce qu'elle overfit sur peu de trades avec un train
+    qui grandit a chaque fold), etre choisie, puis echouer entierement sur
+    le test suivant (taille FIXE, souvent bien plus petite que le train) -
+    perdant ainsi le fold entier silencieusement. _select_best_config doit
+    exclure ces configs en amont, sur un critere purement structurel (taille
+    du test), jamais sur les prix du test lui-meme."""
+    price_data = _small_universe(n=400)
+    grid = [
+        BacktestConfig(ema_fast=8, ema_slow=32, hurst_window=60, hurst_max_lag=15, ou_window=60),
+        BacktestConfig(ema_fast=16, ema_slow=64, hurst_window=150, hurst_max_lag=15, ou_window=150),
+    ]
+    validator = WalkForwardValidator(grid, n_splits=3, periods_per_year=8760, min_valid_periods=15)
+
+    # test_length = 100 : suffisant pour la config a fenetre 60 (60+15<=100)
+    # mais structurellement impossible pour celle a fenetre 150 (150+15>100).
+    best_cfg, best_sharpe = validator._select_best_config(price_data, test_length=100)
+
+    assert best_cfg is not None
+    assert best_cfg.hurst_window == 60, "la config a fenetre 150 (infaisable sur ce test) ne doit jamais etre choisie"
+
+    # Avec un test_length trop petit pour TOUTES les configs du grid, aucune
+    # config ne doit etre selectionnee (plutot que de choisir quand meme la
+    # "moins pire" et faire echouer le fold en aval).
+    best_cfg_none, _ = validator._select_best_config(price_data, test_length=50)
+    assert best_cfg_none is None
+
+
 def test_walk_forward_validator_raises_when_no_fold_is_viable():
     # Historique bien trop court par rapport aux fenetres des signaux :
     # aucun fold ne pourra produire de resultat exploitable.
