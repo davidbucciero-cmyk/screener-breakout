@@ -6,19 +6,28 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 log = logging.getLogger(__name__)
 
-FORMATION_RATIO = 0.6   # part de l'historique utilisee pour selectionner les paires / estimer le hedge ratio
-MAX_PAIRS = 10
-ALLOC_PER_PAIR_USD = 20_000
+# Arbitrage statistique par facteurs PCA + processus Ornstein-Uhlenbeck sur les residus
+# idiosyncratiques (Avellaneda & Lee 2010 ; Velissaris 2010). Remplace l'approche
+# "pairs trading" par cointegration (conservee dans run_pairs_legacy.py) : la litterature
+# montre que trader la cross-section complete des residus d'un modele factoriel bat
+# nettement le fait de chercher des paires isolees (voir README pour les references).
+#
+# Les residus sont calcules hors-echantillon jour par jour (PCA glissante 252j +
+# regression glissante 60j), donc toute la periode produite est deja "out-of-sample" :
+# pas de decoupage formation/trading supplementaire necessaire ici.
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
 
 def main():
     import universe
-    import cointegration
-    import backtest
-    import signals
+    import pca_factors
+    import ou_signal
+    import pca_backtest
+    import pca_live_signals
 
     log.info('=' * 60)
-    log.info('STAT-ARB - PAIRS TRADING PAR COINTEGRATION')
+    log.info('STAT-ARB - FACTEURS PCA + OU SUR RESIDUS (Avellaneda-Lee / Velissaris)')
     log.info('=' * 60)
 
     log.info('STEP 1 - Prix historiques...')
@@ -27,35 +36,30 @@ def main():
         log.error('Pas de donnees, arret.')
         return
     universe.save_prices(prices)
+    returns = prices.pct_change().dropna(how='all')
 
-    split_idx = int(len(prices) * FORMATION_RATIO)
-    formation = prices.iloc[:split_idx]
-    trading = prices.iloc[split_idx:]
-    log.info(f'Formation : {formation.index.min().date()} -> {formation.index.max().date()} '
-              f'({len(formation)}j) | Trading (out-of-sample) : {trading.index.min().date()} -> '
-              f'{trading.index.max().date()} ({len(trading)}j)')
-
-    log.info('STEP 2 - Recherche de paires cointegrees (periode de formation)...')
-    pairs_df = cointegration.find_cointegrated_pairs(formation)
-    if pairs_df.empty:
-        log.warning('Aucune paire cointegree trouvee sur cette fenetre.')
+    log.info('STEP 2 - Residus hors-echantillon (PCA glissante + regression sur facteurs)...')
+    residuals = pca_factors.compute_daily_residuals(returns)
+    if residuals.notna().sum().sum() == 0:
+        log.error('Aucun residu calcule (historique trop court pour PCA_WINDOW+LOADING_WINDOW).')
         return
-    pairs_path = os.path.join(os.path.dirname(__file__), 'data', 'cointegrated_pairs.csv')
-    pairs_df.to_csv(pairs_path, index=False)
-    log.info(f'{len(pairs_df)} paires retenues -> {pairs_path}')
-    log.info('\n' + pairs_df.head(MAX_PAIRS).to_string(index=False))
+    residuals.to_csv(os.path.join(DATA_DIR, 'pca_residuals.csv'))
 
-    log.info('STEP 3 - Backtest out-of-sample (periode de trading)...')
-    metrics_df, portfolio_ret = backtest.run_portfolio_backtest(trading, pairs_df, max_pairs=MAX_PAIRS)
-    metrics_path = os.path.join(os.path.dirname(__file__), 'data', 'backtest_results.csv')
-    metrics_df.to_csv(metrics_path, index=False)
-    if not portfolio_ret.empty:
-        equity_path = os.path.join(os.path.dirname(__file__), 'data', 'portfolio_equity.csv')
-        (1 + portfolio_ret).cumprod().to_csv(equity_path, header=['equity'])
-        log.info(f'Resultats backtest -> {metrics_path} | equity -> {equity_path}')
+    log.info('STEP 3 - S-scores (OU AR(1) sur residu cumule, filtre demi-vie < 30j)...')
+    s_scores, half_lives = ou_signal.compute_s_scores(residuals)
+    s_scores.to_csv(os.path.join(DATA_DIR, 'pca_s_scores.csv'))
 
-    log.info('STEP 4 - Signaux du jour (dernier prix disponible)...')
-    signals_df = signals.run(prices, pairs_df, alloc_usd=ALLOC_PER_PAIR_USD, max_pairs=MAX_PAIRS)
+    log.info('STEP 4 - Backtest portefeuille (dollar-neutre, poids egaux sur positions actives)...')
+    metrics, daily_ret, positions = pca_backtest.run_pca_backtest(residuals, s_scores)
+    if metrics:
+        import json
+        with open(os.path.join(DATA_DIR, 'pca_backtest_results.json'), 'w') as f:
+            json.dump(metrics, f, indent=2)
+        (1 + daily_ret).cumprod().to_csv(os.path.join(DATA_DIR, 'pca_portfolio_equity.csv'), header=['equity'])
+        log.info(f'Metriques : {metrics}')
+
+    log.info('STEP 5 - Signaux du jour (dernier prix disponible)...')
+    signals_df = pca_live_signals.run(s_scores, half_lives)
     if not signals_df.empty:
         log.info('\n' + signals_df.to_string(index=False))
 
