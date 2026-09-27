@@ -9,3 +9,4 @@ screener/logs/
 .pytest_cache/
 crypto_quant/data_cache/
 crypto_quant/data_cache_daily/
+crypto_quant/data_cache_trades_deep/

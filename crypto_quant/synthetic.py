@@ -111,6 +111,56 @@ class FakeExchange:
         return candidates[:limit]
 
 
+def generate_synthetic_trades(
+    n_trades: int,
+    start_ms: int,
+    avg_gap_ms: int = 1000,
+    start_price: float = 100.0,
+    price_vol: float = 0.001,
+    seed: Optional[int] = None,
+    same_timestamp_every: int = 7,
+) -> List[dict]:
+    """Genere des trades synthetiques (id, timestamp, price, amount), au
+    format ccxt (liste de dicts). `same_timestamp_every` force regulierement
+    deux trades consecutifs a partager exactement le meme timestamp (cas
+    frequent en vrai sur un actif liquide), pour tester que la pagination de
+    _fetch_trades_paginated deduplique bien par id plutot que de sauter des
+    trades a la frontiere d'une page."""
+    rng = np.random.default_rng(seed)
+
+    gaps = rng.integers(1, max(2, avg_gap_ms * 2), size=n_trades)
+    if same_timestamp_every:
+        gaps[::same_timestamp_every] = 0
+    timestamps = start_ms + np.cumsum(gaps)
+
+    log_price = np.cumsum(rng.normal(0, price_vol, size=n_trades)) + np.log(start_price)
+    prices = np.exp(log_price)
+    amounts = rng.lognormal(mean=-2, sigma=0.5, size=n_trades)
+
+    return [
+        {"id": str(i), "timestamp": int(ts), "price": float(p), "amount": float(a)}
+        for i, (ts, p, a) in enumerate(zip(timestamps, prices, amounts))
+    ]
+
+
+class FakeTradesExchange:
+    """Faux client ccxt : sert des trades synthetiques pre-generes, pour
+    tester _fetch_trades_paginated/get_trades_history sans reseau."""
+
+    TIMEFRAME_SECONDS = FakeExchange.TIMEFRAME_SECONDS
+
+    def __init__(self, all_trades: List[dict]):
+        self._trades = sorted(all_trades, key=lambda t: t["timestamp"])
+        self.rateLimit = 0
+
+    def parse_timeframe(self, timeframe: str) -> int:
+        return self.TIMEFRAME_SECONDS[timeframe]
+
+    def fetch_trades(self, symbol: str, since: int, limit: int) -> List[dict]:
+        candidates = [t for t in self._trades if t["timestamp"] >= since]
+        return candidates[:limit]
+
+
 def synthetic_dataframe(n_periods: int, timeframe: str = "1h", seed: Optional[int] = None, **kwargs) -> pd.DataFrame:
     """Raccourci : genere directement un DataFrame OHLCV indexe par date.
 

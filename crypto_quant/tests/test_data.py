@@ -11,8 +11,10 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from crypto_quant.data import CCXTDataFeed
-from crypto_quant.synthetic import FakeExchange, generate_synthetic_ohlcv
+import pandas as pd
+
+from crypto_quant.data import CCXTDataFeed, resample_trades_to_ohlcv
+from crypto_quant.synthetic import FakeExchange, FakeTradesExchange, generate_synthetic_ohlcv, generate_synthetic_trades
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "_tmp_cache")
 
@@ -120,6 +122,114 @@ def test_get_universe_history_returns_all_symbols():
     assert len(out["ETH/USD"]) == n
 
 
+# ---------------------------------------------------------------------------
+# Historique profond via les trades bruts (etape 7 bis) - voir README.
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_trades_paginated_dedupes_and_covers_all_trades():
+    """same_timestamp_every force des trades consecutifs a partager le meme
+    timestamp : si la pagination avancait naivement le curseur par +1ms sans
+    dedupliquer par id, elle sauterait ou dupliquerait des trades a la
+    frontiere des pages. n_trades > limit force plusieurs pages."""
+    n = 2500
+    trades = generate_synthetic_trades(n, start_ms=1_700_000_000_000, seed=3, same_timestamp_every=7)
+    fake_exchange = FakeTradesExchange(trades)
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+    result = feed._fetch_trades_paginated("BTC/USD", since_ms=1_700_000_000_000, limit=500)
+
+    ids = [t["id"] for t in result]
+    assert len(ids) == n
+    assert len(set(ids)) == n, "aucun trade duplique malgre des timestamps partages"
+    assert set(ids) == {t["id"] for t in trades}, "aucun trade manquant"
+
+
+def test_get_trades_history_caches_and_backfills():
+    """Couvre aussi un bug reel trouve ici : les id de trade "ressemblant" a
+    des nombres (ex: "0", "74968999") sont lus comme int64 par pandas au
+    rechargement du cache CSV, alors que ccxt les renvoie en str - sans
+    dtype={"id": str} force a la lecture, drop_duplicates(subset="id") ne
+    matche jamais le cache relu contre les trades fraichement recuperes
+    (meme trade, deux types differents) et duplique silencieusement a
+    chaque appel."""
+    n = 3000
+    trades = generate_synthetic_trades(n, start_ms=1_700_000_000_000, seed=4)
+    fake_exchange = FakeTradesExchange(trades)
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+
+    small = feed.get_trades_history("BTC/USD", history_days=1_000_000)  # tout l'historique dispo, borne large
+    assert len(small) == n
+
+    cache_path = feed._trades_cache_path("BTC/USD")
+    assert os.path.exists(cache_path)
+
+    # Deuxieme appel : pas de nouveau trade cote exchange -> pas de duplication,
+    # meme apres un aller-retour par le cache CSV sur disque.
+    again = feed.get_trades_history("BTC/USD", history_days=1_000_000)
+    assert len(again) == n, "duplication silencieuse a la frontiere de pagination (voir docstring)"
+    assert not again["id"].duplicated().any()
+
+    # Troisieme appel, pour bonne mesure (la duplication, si elle existait,
+    # s'accumulerait a chaque appel plutot que de rester stable).
+    third = feed.get_trades_history("BTC/USD", history_days=1_000_000)
+    assert len(third) == n
+
+
+def test_resample_trades_to_ohlcv_matches_manual_computation():
+    base_ms = 1_700_000_000_000
+    trades = pd.DataFrame(
+        [
+            {"id": "1", "timestamp": base_ms + 0, "price": 100.0, "amount": 1.0},
+            {"id": "2", "timestamp": base_ms + 1000, "price": 105.0, "amount": 2.0},
+            {"id": "3", "timestamp": base_ms + 2000, "price": 95.0, "amount": 1.5},
+            # bougie suivante (+1h), un seul trade
+            {"id": "4", "timestamp": base_ms + 3600_000, "price": 110.0, "amount": 0.5},
+        ]
+    )
+    bars = resample_trades_to_ohlcv(trades, timeframe_seconds=3600)
+
+    assert len(bars) == 2
+    first, second = bars.iloc[0], bars.iloc[1]
+    assert first["open"] == 100.0
+    assert first["high"] == 105.0
+    assert first["low"] == 95.0
+    assert first["close"] == 95.0
+    assert first["volume"] == 1.0 + 2.0 + 1.5
+    assert second["open"] == second["close"] == 110.0
+    assert second["volume"] == 0.5
+
+
+def test_resample_trades_to_ohlcv_skips_bars_with_no_trades():
+    base_ms = 1_700_000_000_000
+    trades = pd.DataFrame(
+        [
+            {"id": "1", "timestamp": base_ms, "price": 100.0, "amount": 1.0},
+            # trou de 3h sans aucun trade avant le suivant
+            {"id": "2", "timestamp": base_ms + 3 * 3600_000, "price": 100.0, "amount": 1.0},
+        ]
+    )
+    bars = resample_trades_to_ohlcv(trades, timeframe_seconds=3600)
+
+    assert len(bars) == 2, "les bougies vides intermediaires doivent etre absentes, pas forward-fillees"
+
+
+def test_get_history_from_trades_returns_ohlcv_like_format():
+    n = 5000
+    trades = generate_synthetic_trades(n, start_ms=1_700_000_000_000, avg_gap_ms=500, seed=5)
+    fake_exchange = FakeTradesExchange(trades)
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+    bars = feed.get_history_from_trades("BTC/USD", "1h", history_days=1_000_000)
+
+    assert list(bars.columns) == ["open", "high", "low", "close", "volume"]
+    assert bars.index.name == "datetime"
+    assert bars.index.is_monotonic_increasing
+    assert not bars.isna().any().any()
+    assert len(bars) > 0
+
+
 if __name__ == "__main__":
     setup_function(None)
     test_get_history_paginates_and_caches()
@@ -135,6 +245,21 @@ if __name__ == "__main__":
 
     setup_function(None)
     test_get_universe_history_returns_all_symbols()
+    teardown_function(None)
+
+    setup_function(None)
+    test_fetch_trades_paginated_dedupes_and_covers_all_trades()
+    teardown_function(None)
+
+    setup_function(None)
+    test_get_trades_history_caches_and_backfills()
+    teardown_function(None)
+
+    test_resample_trades_to_ohlcv_matches_manual_computation()
+    test_resample_trades_to_ohlcv_skips_bars_with_no_trades()
+
+    setup_function(None)
+    test_get_history_from_trades_returns_ohlcv_like_format()
     teardown_function(None)
 
     print("Tous les tests data.py passent.")
