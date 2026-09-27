@@ -223,6 +223,53 @@
   footer { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); line-height: 1.6; }
   footer a { color: var(--text-secondary); }
   footer code { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+
+  .explore-warning {
+    background: var(--critical-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    margin: 14px 0 20px;
+  }
+  .explore-warning strong { color: var(--text-primary); }
+  .explore-warning em { font-style: normal; font-weight: 650; color: var(--text-primary); }
+
+  .explore-sliders {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 16px 24px;
+    margin-bottom: 20px;
+  }
+  .slider-group label { display: block; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px; }
+  .slider-group label strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .slider-group input[type="range"] {
+    width: 100%;
+    accent-color: var(--s1);
+    height: 20px;
+  }
+
+  .explore-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 8px; }
+  @media (max-width: 640px) { .explore-compare { grid-template-columns: 1fr; } }
+  .explore-panel {
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--text-muted);
+  }
+  .explore-panel.train { border-left-color: var(--text-muted); }
+  .explore-panel.test.good { border-left-color: var(--good); }
+  .explore-panel.test.bad { border-left-color: var(--critical); }
+  .explore-panel-title { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin-bottom: 10px; }
+  .explore-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 520px) { .explore-metrics { grid-template-columns: repeat(2, 1fr); } }
+  .explore-metrics .m-label { display: block; font-size: 11px; color: var(--text-muted); }
+  .explore-metrics .m-value { display: block; font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .explore-metrics .m-value.good { color: var(--good); }
+  .explore-metrics .m-value.bad { color: var(--critical); }
 </style>
 </head>
 <body>
@@ -258,6 +305,72 @@
         <div class="kpi-tile"><div class="label">Hit rate</div><div class="value" id="kpi-hit">—</div></div>
         <div class="kpi-tile"><div class="label">Turnover moyen</div><div class="value" id="kpi-turnover">—</div></div>
         <div class="kpi-tile"><div class="label">Folds analysés</div><div class="value neutral" id="kpi-folds">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <p class="card-title">Explorateur de paramètres — chasse à l'edge</p>
+          <p class="card-sub">Déplace les curseurs : les métriques changent instantanément (grille de <span id="explore-n-combos">—</span> combinaisons pré-calculées). Coupe-circuit de drawdown désactivé ici pour rester rapide — le résumé ci-dessus, coupe-circuit actif, reste la référence.</p>
+        </div>
+      </div>
+
+      <div class="explore-warning">
+        <strong>Piège à éviter.</strong> Le panneau <em>Train</em> est ce que tu optimises en bougeant les curseurs — il va presque toujours s'améliorer si tu cherches assez, même sans aucun edge réel : c'est la définition même du surapprentissage. Le panneau <em>Hors-échantillon</em> utilise une période jamais vue pendant ta recherche : c'est le seul chiffre qui compte. Et ces données restent synthétiques, avec une tendance et un retour à la moyenne injectés à la main pour valider que l'outil sait les retrouver — en trouver ici ne prouve rien sur le marché réel (le vrai backtest Kraken, lui, donne un Sharpe hors-échantillon proche de zéro).
+      </div>
+
+      <div class="explore-sliders">
+        <div class="slider-group">
+          <label>EMA rapide / lente — <strong id="s-ema-label">—</strong></label>
+          <input type="range" id="s-ema" min="0" max="1" step="1" value="0">
+        </div>
+        <div class="slider-group">
+          <label>Seuil de significativité OU (t) — <strong id="s-sigt-label">—</strong></label>
+          <input type="range" id="s-sigt" min="0" max="1" step="1" value="0">
+        </div>
+        <div class="slider-group">
+          <label>Volatilité cible — <strong id="s-vol-label">—</strong></label>
+          <input type="range" id="s-vol" min="0" max="1" step="1" value="0">
+        </div>
+        <div class="slider-group">
+          <label>Coût de transaction — <strong id="s-cost-label">—</strong></label>
+          <input type="range" id="s-cost" min="0" max="1" step="1" value="0">
+        </div>
+      </div>
+
+      <div class="explore-compare">
+        <div class="explore-panel train">
+          <div class="explore-panel-title">Train — optimisé, à ne pas croire</div>
+          <div class="explore-metrics">
+            <div><span class="m-label">Sharpe</span><span class="m-value" id="tr-sharpe">—</span></div>
+            <div><span class="m-label">CAGR</span><span class="m-value" id="tr-cagr">—</span></div>
+            <div><span class="m-label">Max DD</span><span class="m-value" id="tr-mdd">—</span></div>
+            <div><span class="m-label">Hit rate</span><span class="m-value" id="tr-hit">—</span></div>
+          </div>
+        </div>
+        <div class="explore-panel test">
+          <div class="explore-panel-title">Hors-échantillon — le seul qui compte</div>
+          <div class="explore-metrics">
+            <div><span class="m-label">Sharpe</span><span class="m-value" id="te-sharpe">—</span></div>
+            <div><span class="m-label">CAGR</span><span class="m-value" id="te-cagr">—</span></div>
+            <div><span class="m-label">Max DD</span><span class="m-value" id="te-mdd">—</span></div>
+            <div><span class="m-label">Hit rate</span><span class="m-value" id="te-hit">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-head" style="margin-top: 22px;">
+        <div>
+          <p class="card-title" style="font-size: 13.5px;">Sharpe train vs. hors-échantillon, les 1152 combinaisons</p>
+          <p class="card-sub" id="explore-corr-note">Chaque point = une combinaison de paramètres. La ligne pointillée est la diagonale « généralise parfaitement » (train = test) ; un nuage bien en-dessous d'elle indique du surapprentissage généralisé.</p>
+        </div>
+      </div>
+      <div class="chart-shell" id="explore-scatter-shell">
+        <svg class="chart" id="explore-scatter"></svg>
+        <div class="tooltip" id="explore-scatter-tooltip"></div>
       </div>
     </div>
   </section>
@@ -389,6 +502,14 @@
     .then(function (data) { render(data); })
     .catch(function (err) {
       document.getElementById("meta-generated").textContent = "Erreur de chargement des données.";
+      console.error(err);
+    });
+
+  fetch("./explore_grid.json")
+    .then(function (r) { return r.json(); })
+    .then(function (grid) { initExplorer(grid); })
+    .catch(function (err) {
+      document.getElementById("explore-n-combos").textContent = "erreur de chargement";
       console.error(err);
     });
 
@@ -835,6 +956,251 @@
       crosshair.style.display = "none";
       tooltip.classList.remove("show");
     });
+  }
+
+  // --- Explorateur de parametres : sliders + comparaison train/test + nuage de points ---
+  function initExplorer(grid) {
+    var axes = grid.axes;
+    var results = grid.results;
+    document.getElementById("explore-n-combos").textContent = grid.meta.n_combinations;
+
+    var lookup = {};
+    results.forEach(function (r) {
+      var key = r.ema_fast + "_" + r.ema_slow + "_" + r.ou_significance_t + "_" + r.target_vol + "_" + r.cost_bps;
+      lookup[key] = r;
+    });
+
+    var emaSlider = document.getElementById("s-ema");
+    var sigtSlider = document.getElementById("s-sigt");
+    var volSlider = document.getElementById("s-vol");
+    var costSlider = document.getElementById("s-cost");
+
+    emaSlider.max = axes.ema_pairs.length - 1;
+    sigtSlider.max = axes.sig_t_values.length - 1;
+    volSlider.max = axes.target_vol_values.length - 1;
+    costSlider.max = axes.cost_bps_values.length - 1;
+
+    emaSlider.value = Math.floor(axes.ema_pairs.length / 2);
+    sigtSlider.value = Math.floor(axes.sig_t_values.length / 2);
+    volSlider.value = Math.floor(axes.target_vol_values.length / 2);
+    costSlider.value = Math.floor(axes.cost_bps_values.length / 2);
+
+    function fmtPctLocal(v, digits) {
+      if (v === null || v === undefined) return "—";
+      return (v * 100).toFixed(digits === undefined ? 1 : digits) + "%";
+    }
+    function fmtNumLocal(v, digits) {
+      if (v === null || v === undefined) return "—";
+      return v.toFixed(digits === undefined ? 2 : digits);
+    }
+
+    function setMetric(prefix, metrics) {
+      var sharpeEl = document.getElementById(prefix + "-sharpe");
+      sharpeEl.textContent = fmtNumLocal(metrics.sharpe, 2);
+      sharpeEl.classList.remove("good", "bad");
+      if (metrics.sharpe !== null) sharpeEl.classList.add(metrics.sharpe >= 0 ? "good" : "bad");
+      document.getElementById(prefix + "-cagr").textContent = fmtPctLocal(metrics.cagr, 1);
+      document.getElementById(prefix + "-mdd").textContent = fmtPctLocal(metrics.max_drawdown, 1);
+      document.getElementById(prefix + "-hit").textContent = fmtPctLocal(metrics.hit_rate, 1);
+    }
+
+    var scatterApi = renderScatter(results);
+
+    function update() {
+      var pair = axes.ema_pairs[+emaSlider.value];
+      var sigT = axes.sig_t_values[+sigtSlider.value];
+      var vol = axes.target_vol_values[+volSlider.value];
+      var cost = axes.cost_bps_values[+costSlider.value];
+
+      document.getElementById("s-ema-label").textContent = pair.label;
+      document.getElementById("s-sigt-label").textContent = sigT.toFixed(1);
+      document.getElementById("s-vol-label").textContent = fmtPctLocal(vol, 2);
+      document.getElementById("s-cost-label").textContent = cost + " bps";
+
+      var key = pair.fast + "_" + pair.slow + "_" + sigT + "_" + vol + "_" + cost;
+      var row = lookup[key];
+      if (!row) return;
+
+      setMetric("tr", row.train);
+      setMetric("te", row.test);
+
+      var testPanel = document.querySelector(".explore-panel.test");
+      testPanel.classList.remove("good", "bad");
+      if (row.test.sharpe !== null) testPanel.classList.add(row.test.sharpe >= 0 ? "good" : "bad");
+
+      if (row.train.sharpe !== null && row.test.sharpe !== null) scatterApi.highlight(row);
+    }
+
+    [emaSlider, sigtSlider, volSlider, costSlider].forEach(function (el) {
+      el.addEventListener("input", update);
+    });
+
+    update();
+
+    window.addEventListener("resize", debounce(function () {
+      scatterApi = renderScatter(results);
+      update();
+    }, 150));
+  }
+
+  function renderScatter(results) {
+    var svg = document.getElementById("explore-scatter");
+    var shell = document.getElementById("explore-scatter-shell");
+    var tooltip = document.getElementById("explore-scatter-tooltip");
+    var width = shell.clientWidth || 600;
+    var height = 320;
+    var pad = { top: 14, right: 16, bottom: 32, left: 46 };
+
+    var points = results.filter(function (r) { return r.train.sharpe !== null && r.test.sharpe !== null; });
+    var xs = points.map(function (p) { return p.train.sharpe; });
+    var ys = points.map(function (p) { return p.test.sharpe; });
+    var lo = Math.min(Math.min.apply(null, xs), Math.min.apply(null, ys));
+    var hi = Math.max(Math.max.apply(null, xs), Math.max.apply(null, ys));
+    var padV = (hi - lo) * 0.06 || 1;
+    lo -= padV; hi += padV;
+
+    var x = function (v) { return pad.left + (v - lo) / (hi - lo) * (width - pad.left - pad.right); };
+    var y = function (v) { return pad.top + (1 - (v - lo) / (hi - lo)) * (height - pad.top - pad.bottom); };
+
+    var svgns = "http://www.w3.org/2000/svg";
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.innerHTML = "";
+
+    var gridColor = resolveColor("var(--grid)");
+    var baselineColor = resolveColor("var(--baseline)");
+    var mutedColor = resolveColor("var(--text-muted)");
+    var s1 = resolveColor("var(--s1)");
+    var goodColor = resolveColor("var(--good)");
+    var critColor = resolveColor("var(--critical)");
+
+    var ticks = niceTicksSigned(lo, hi, 5);
+    ticks.forEach(function (t) {
+      var ly = y(t), lx = x(t);
+      var hline = document.createElementNS(svgns, "line");
+      hline.setAttribute("x1", pad.left); hline.setAttribute("x2", width - pad.right);
+      hline.setAttribute("y1", ly); hline.setAttribute("y2", ly);
+      hline.setAttribute("stroke", Math.abs(t) < 1e-9 ? baselineColor : gridColor);
+      hline.setAttribute("stroke-width", "1");
+      svg.appendChild(hline);
+
+      var lbl = document.createElementNS(svgns, "text");
+      lbl.setAttribute("x", pad.left - 8); lbl.setAttribute("y", ly + 3.5);
+      lbl.setAttribute("text-anchor", "end"); lbl.setAttribute("class", "axis-label"); lbl.setAttribute("fill", mutedColor);
+      lbl.textContent = t.toFixed(1);
+      svg.appendChild(lbl);
+
+      var xlbl = document.createElementNS(svgns, "text");
+      xlbl.setAttribute("x", lx); xlbl.setAttribute("y", height - pad.bottom + 16);
+      xlbl.setAttribute("text-anchor", "middle"); xlbl.setAttribute("class", "axis-label"); xlbl.setAttribute("fill", mutedColor);
+      xlbl.textContent = t.toFixed(1);
+      svg.appendChild(xlbl);
+    });
+
+    var xTitle = document.createElementNS(svgns, "text");
+    xTitle.setAttribute("x", (pad.left + width - pad.right) / 2); xTitle.setAttribute("y", height - 2);
+    xTitle.setAttribute("text-anchor", "middle"); xTitle.setAttribute("class", "axis-label"); xTitle.setAttribute("fill", mutedColor);
+    xTitle.textContent = "Sharpe train";
+    svg.appendChild(xTitle);
+
+    var yTitle = document.createElementNS(svgns, "text");
+    yTitle.setAttribute("x", pad.left); yTitle.setAttribute("y", pad.top - 4);
+    yTitle.setAttribute("text-anchor", "start"); yTitle.setAttribute("class", "axis-label"); yTitle.setAttribute("fill", mutedColor);
+    yTitle.textContent = "Sharpe hors-échantillon ↑";
+    svg.appendChild(yTitle);
+
+    var diag = document.createElementNS(svgns, "line");
+    diag.setAttribute("x1", x(lo)); diag.setAttribute("y1", y(lo));
+    diag.setAttribute("x2", x(hi)); diag.setAttribute("y2", y(hi));
+    diag.setAttribute("stroke", mutedColor); diag.setAttribute("stroke-width", "1"); diag.setAttribute("stroke-dasharray", "4,4");
+    svg.appendChild(diag);
+
+    var dotsGroup = document.createElementNS(svgns, "g");
+    points.forEach(function (p) {
+      var c = document.createElementNS(svgns, "circle");
+      c.setAttribute("cx", x(p.train.sharpe)); c.setAttribute("cy", y(p.test.sharpe));
+      c.setAttribute("r", 2.6);
+      c.setAttribute("fill", s1);
+      c.setAttribute("fill-opacity", "0.28");
+      dotsGroup.appendChild(c);
+    });
+    svg.appendChild(dotsGroup);
+
+    var hiDot = document.createElementNS(svgns, "circle");
+    hiDot.setAttribute("r", 7);
+    hiDot.setAttribute("fill", s1);
+    hiDot.setAttribute("stroke", resolveColor("var(--surface)"));
+    hiDot.setAttribute("stroke-width", "2.5");
+    svg.appendChild(hiDot);
+
+    var hitRect = document.createElementNS(svgns, "rect");
+    hitRect.setAttribute("x", pad.left); hitRect.setAttribute("y", pad.top);
+    hitRect.setAttribute("width", Math.max(0, width - pad.left - pad.right));
+    hitRect.setAttribute("height", Math.max(0, height - pad.top - pad.bottom));
+    hitRect.setAttribute("fill", "transparent");
+    svg.appendChild(hitRect);
+
+    hitRect.addEventListener("pointermove", function (evt) {
+      var rect = svg.getBoundingClientRect();
+      var scaleX = width / rect.width, scaleY = height / rect.height;
+      var px = (evt.clientX - rect.left) * scaleX;
+      var py = (evt.clientY - rect.top) * scaleY;
+      var best = null, bestDist = Infinity;
+      points.forEach(function (p) {
+        var dx = x(p.train.sharpe) - px, dy = y(p.test.sharpe) - py;
+        var d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; best = p; }
+      });
+      if (!best) return;
+
+      tooltip.innerHTML =
+        '<div class="t-date">EMA ' + best.ema_fast + '/' + best.ema_slow + ' · t≥' + best.ou_significance_t.toFixed(1) +
+        ' · vol ' + (best.target_vol * 100).toFixed(2) + '% · ' + best.cost_bps + ' bps</div>' +
+        '<div class="t-row"><span class="t-key">Train</span><span class="t-val">' + best.train.sharpe.toFixed(2) + '</span></div>' +
+        '<div class="t-row"><span class="t-key">Test</span><span class="t-val">' + best.test.sharpe.toFixed(2) + '</span></div>';
+
+      var shellRect = shell.getBoundingClientRect();
+      var localX = (evt.clientX - shellRect.left), localY = (evt.clientY - shellRect.top);
+      var ttW = 210;
+      tooltip.style.left = Math.min(Math.max(0, localX + 14), shell.clientWidth - ttW) + "px";
+      tooltip.style.top = Math.max(0, localY - 70) + "px";
+      tooltip.classList.add("show");
+    });
+    hitRect.addEventListener("pointerleave", function () { tooltip.classList.remove("show"); });
+
+    var n = points.length;
+    var mx = xs.reduce(function (a, b) { return a + b; }, 0) / n;
+    var my = ys.reduce(function (a, b) { return a + b; }, 0) / n;
+    var cov = 0, vx = 0, vy = 0;
+    for (var i = 0; i < n; i++) {
+      var dx = xs[i] - mx, dy = ys[i] - my;
+      cov += dx * dy; vx += dx * dx; vy += dy * dy;
+    }
+    var corr = cov / Math.sqrt(vx * vy);
+    document.getElementById("explore-corr-note").textContent =
+      "Corrélation train/test sur les " + n + " combinaisons : r = " + corr.toFixed(2) + ". " +
+      (corr > 0.6
+        ? "Plutôt corrélé sur ce jeu synthétique à structure injectée (cf. avertissement ci-dessus) — attendez-vous à beaucoup moins sur du marché réel."
+        : "Peu ou pas corrélé : le train ne prédit pas le hors-échantillon, signature classique du surapprentissage.");
+
+    return {
+      highlight: function (row) {
+        hiDot.setAttribute("cx", x(row.train.sharpe));
+        hiDot.setAttribute("cy", y(row.test.sharpe));
+        hiDot.setAttribute("fill", row.test.sharpe >= 0 ? goodColor : critColor);
+      },
+    };
+  }
+
+  function niceTicksSigned(min, max, count) {
+    var range = max - min;
+    var rawStep = range / count;
+    var mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    var norm = rawStep / mag;
+    var step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    var start = Math.ceil(min / step) * step;
+    var ticks = [];
+    for (var v = start; v <= max; v += step) ticks.push(v);
+    return ticks;
   }
 })();
 </script>

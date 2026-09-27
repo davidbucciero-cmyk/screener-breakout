@@ -27,6 +27,29 @@ le dashboard l'indique explicitement en banniere. Pour un dashboard sur
 donnees Kraken reelles, remplacer `price_data` dans `dashboard.py` par un
 vrai historique `CCXTDataFeed.get_universe_history(...)`.
 
+### Explorateur de parametres interactif
+
+Le meme dashboard inclut un explorateur : 4 curseurs (paire EMA, seuil de
+significativite OU, volatilite cible, cout de transaction) recalculent
+instantanement les metriques a partir d'une grille pre-calculee de 1152
+combinaisons (`dashboard_explore.py`, regenere avec
+`python -m crypto_quant.dashboard_explore`).
+
+Point de conception important : pour rester rapide (la grille complete se
+calcule en quelques secondes plutot qu'en dizaines de minutes), le
+coupe-circuit de drawdown est DESACTIVE dans cet explorateur - lui seul
+introduit une dependance sequentielle (l'equity determine les haltes, qui
+determinent l'equity suivante) qui empecherait de vectoriser le balayage.
+Verifie par test (`test_dashboard_explore.py`) contre `run_backtest()` pour
+garantir que les deux implementations restent d'accord.
+
+Le dashboard affiche TOUJOURS deux chiffres cote a cote pour chaque
+combinaison choisie : la performance "train" (ce qu'on optimise en
+cherchant - va presque toujours s'ameliorer, meme sans edge reel) et la
+performance hors-echantillon sur une periode jamais vue pendant la
+recherche (le seul chiffre qui compte). Un nuage de points (train vs test
+sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
+
 ## Etat d'avancement
 
 - [x] Etape 1 - Donnees (`data.py`, `synthetic.py`, `config.py`)
