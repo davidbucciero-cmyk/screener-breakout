@@ -4,3 +4,11 @@ requests>=2.31.0
 yfinance>=0.2.36
 openbb>=4.0.0
 statsmodels>=0.14.0
+
+# statarb/scripts/quantum_selection.py -- versions figees car qiskit-algorithms
+# (dernier release 0.3.x/0.4.0) est incompatible avec qiskit >=2.0 (l'interface
+# Sampler V1 qu'il attend a change cote qiskit-aer/qiskit-core).
+qiskit==1.2.4
+qiskit-aer==0.15.1
+qiskit-optimization==0.6.1
+qiskit-algorithms==0.3.1

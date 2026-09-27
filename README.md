@@ -78,6 +78,43 @@ brut plutot que de continuer a limer les couts : enrichir le modele de
 facteurs (IPCA conditionnel) ou ajouter un filtre momentum sectoriel
 (Velissaris, 2010).
 
+## Selection diversifiee par ordinateur quantique (QAOA)
+
+`run_quantum_selection.py` (a lancer apres `run_statarb.py`) propose une
+alternative a la regle gloutonne `|s|/demi-vie` de `pca_backtest.py` pour
+choisir quelles positions ouvrir parmi les candidats actionnables du jour :
+la selection de portefeuille sous contrainte de cardinalite (choisir B titres
+parmi N pour maximiser le rendement attendu net d'un terme de risque
+`x^T*Sigma*x`) est un QUBO standard (Egger et al. 2020, "Quantum Computing
+for Finance"), directement soluble par QAOA. Contrairement a la regle
+gloutonne actuelle, qui peut tres bien remplir tout le budget avec des titres
+du meme secteur qui bougent ensemble, QAOA tient compte de la correlation
+entre candidats et diversifie reellement.
+
+Limite pratique : QAOA (simulateur ou vrai processeur) ne passe a l'echelle
+que sur ~20 variables binaires aujourd'hui. On reduit donc d'abord les
+candidats du jour a une short-list des 20 plus prioritaires (`scripts/
+quantum_selection.py`), puis QAOA choisit le sous-ensemble le mieux
+diversifie parmi eux. Pour cette raison la methode s'applique a la decision
+du jour, pas au backtest historique (des milliers de jours x des centaines de
+candidats, hors de portee de QAOA).
+
+Teste sur les candidats reels du dernier run (77 candidats, short-list de 20,
+budget de 10) : QAOA retrouve 9/10 titres de la solution optimale exacte
+(a 0.7% de l'objectif optimal), et la solution diversifiee reduit la variance
+du portefeuille d'environ 10% par rapport a la regle gloutonne actuelle sur ce
+meme jeu de candidats.
+
+Par defaut, QAOA tourne sur le simulateur local Qiskit Aer (gratuit, pas de
+compte necessaire). Pour l'executer sur un vrai processeur IBM Quantum, il
+faut un token API IBM Quantum configure comme variable d'environnement de la
+session (jamais colle dans le chat) — demande a l'assistant le nom de
+variable a utiliser au moment de le configurer.
+
+Dependances (`requirements.txt`) : `qiskit==1.2.4`, `qiskit-aer==0.15.1`,
+`qiskit-optimization==0.6.1`, `qiskit-algorithms==0.3.1` — versions figees
+car `qiskit-algorithms` (non maintenu depuis 2024) casse avec `qiskit>=2.0`.
+
 **Important** : les signaux generes ne sont pas des ordres. L'execution live
 passe par des instructions IBKR en attente (non des ordres directs), a
 valider manuellement avant envoi. Un residu qui retourne bien a sa moyenne
