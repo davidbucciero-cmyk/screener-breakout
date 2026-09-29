@@ -8,6 +8,10 @@ Quatre briques independantes, chacune capture une information differente :
 - ema_trend_signal : force de la tendance, normalisee par la volatilite.
 - ou_meanreversion_signal : force du retour a la moyenne, estimee par
   regression AR(1) (equivalent discret d'un processus d'Ornstein-Uhlenbeck).
+  Expose aussi la demi-vie de retour a la moyenne (half_life) ;
+  estimate_dominant_half_life/suggest_meanreversion_window s'en servent pour
+  calibrer la fenetre d'estimation elle-meme (cf. Chan, "Algorithmic
+  Trading", chap. 2) plutot que de la laisser uniquement a un grid search.
 - ewma_volatility : volatilite pour le sizing (etape 4), pas un signal
   directionnel.
 
@@ -18,6 +22,7 @@ la periode de warm-up qui n'a pas assez d'historique).
 from __future__ import annotations
 
 import warnings
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -126,7 +131,13 @@ def ou_meanreversion_signal(
     atteint, le signal est laisse a NaN plutot que d'inventer une reversion
     qui n'est pas etablie.
 
-    Renvoie un DataFrame avec les colonnes: theta, mu, signal.
+    La colonne half_life (-log(2)/theta, cf. Chan, "Algorithmic Trading",
+    chap. 2) est le temps caracteristique de retour a la moyenne : utile
+    pour calibrer la fenetre d'estimation elle-meme (voir
+    estimate_dominant_half_life/suggest_meanreversion_window ci-dessous)
+    plutot que de la chercher uniquement par grid search.
+
+    Renvoie un DataFrame avec les colonnes: theta, mu, signal, half_life.
     """
     log_close = np.log(close.values)
     n = len(close)
@@ -134,6 +145,7 @@ def ou_meanreversion_signal(
     theta_arr = np.full(n, np.nan)
     mu_arr = np.full(n, np.nan)
     signal_arr = np.full(n, np.nan)
+    half_life_arr = np.full(n, np.nan)
 
     for i in range(window, n + 1):
         segment = log_close[i - window : i]
@@ -155,13 +167,70 @@ def ou_meanreversion_signal(
         idx = i - 1
         theta_arr[idx] = theta
         mu_arr[idx] = mu
+        if theta > 0:
+            half_life_arr[idx] = np.log(2) / theta
         if sigma_eq > 0:
             signal_arr[idx] = (mu - log_close[idx]) / sigma_eq
 
     return pd.DataFrame(
-        {"theta": theta_arr, "mu": mu_arr, "signal": signal_arr},
+        {"theta": theta_arr, "mu": mu_arr, "signal": signal_arr, "half_life": half_life_arr},
         index=close.index,
     )
+
+
+def estimate_dominant_half_life(
+    close: pd.Series,
+    window: int = 100,
+    dt: float = 1.0,
+    significance_t: float = 2.0,
+) -> float:
+    """Estimation robuste (mediane) de la demi-vie de retour a la moyenne
+    sur toute la serie fournie (typiquement un segment TRAIN), a partir de
+    la meme regression AR(1) glissante que ou_meanreversion_signal.
+
+    Sert a calibrer une fenetre d'estimation (voir
+    suggest_meanreversion_window) plutot qu'a produire un signal de trading -
+    d'ou la mediane (robuste aux quelques fenetres bruitees) plutot que la
+    derniere valeur seule. Renvoie NaN si aucune fenetre glissante n'a
+    detecte de retour a la moyenne significatif (voir significance_t).
+    """
+    half_lives = ou_meanreversion_signal(close, window=window, dt=dt, significance_t=significance_t)["half_life"]
+    valid = half_lives.dropna()
+    if valid.empty:
+        return float("nan")
+    return float(valid.median())
+
+
+def suggest_meanreversion_window(
+    close: pd.Series,
+    window: int = 100,
+    dt: float = 1.0,
+    significance_t: float = 2.0,
+    multiplier: float = 3.0,
+    min_window: int = 20,
+    max_window: int = 300,
+) -> Optional[int]:
+    """Suggere une fenetre d'estimation (ou_window) a partir de la demi-vie
+    de retour a la moyenne dominante, plutot que de la laisser uniquement a
+    un grid search aveugle (cf. Chan, "Algorithmic Trading", chap. 2 : "setting
+    the look-back to equal a small multiple of the half-life is close to
+    optimal" - moins de parametres libres optimises en force brute, donc
+    moins de risque de data-snooping, cf. chap. 1 du meme livre).
+
+    A appeler UNE FOIS sur un segment TRAIN pour calibrer BacktestConfig.ou_window
+    avant un run/fold - pas concu pour varier bougie par bougie en cours de
+    backtest (fenetre glissante de taille fixe partout ailleurs dans le
+    pipeline, cf. _align_universe).
+
+    Renvoie None si aucune demi-vie exploitable n'a ete trouvee (serie pas
+    mean-revertante sur cette fenetre) - a l'appelant de garder une valeur
+    par defaut dans ce cas plutot que d'en inventer une.
+    """
+    half_life = estimate_dominant_half_life(close, window=window, dt=dt, significance_t=significance_t)
+    if not np.isfinite(half_life) or half_life <= 0:
+        return None
+    suggested = round(half_life * multiplier)
+    return int(min(max_window, max(min_window, suggested)))
 
 
 def ewma_volatility(close: pd.Series, lam: float = 0.94) -> pd.Series:

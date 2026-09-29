@@ -13,10 +13,12 @@ import numpy as np
 
 from crypto_quant.signals import (
     ema_trend_signal,
+    estimate_dominant_half_life,
     ewma_volatility,
     hurst_exponent,
     ou_meanreversion_signal,
     rolling_hurst,
+    suggest_meanreversion_window,
 )
 from crypto_quant.synthetic import synthetic_dataframe
 
@@ -96,6 +98,66 @@ def test_ou_signal_is_nan_when_no_reversion_detected():
     result = ou_meanreversion_signal(df["close"], window=100)
     coverage = result["signal"].notna().mean()
     assert coverage < 0.5, f"Le signal OU ne devrait pas se declencher souvent sur une serie sans reversion (couverture={coverage:.2f})"
+
+
+def test_ou_signal_half_life_consistent_with_theta():
+    # Verification mathematique pure (cf. Chan, "Algorithmic Trading", chap. 2) :
+    # half_life doit valoir exactement log(2)/theta partout ou les deux sont
+    # definis, quelle que soit la serie.
+    df = synthetic_dataframe(400, drift=0.0, gbm_vol=0.0003, ou_theta=0.25, ou_sigma=0.03, seed=6)
+    result = ou_meanreversion_signal(df["close"], window=100)
+    valid = result.dropna(subset=["theta", "half_life"])
+    assert len(valid) > 0
+    np.testing.assert_allclose(valid["half_life"], np.log(2) / valid["theta"], rtol=1e-9)
+
+
+def test_estimate_dominant_half_life_recovers_known_value():
+    # ou_theta=0.25 avec dt=1 (defaut) correspond exactement au theta discret
+    # estime par regression AR(1) (meme recursion, cf. synthetic.py) -> la
+    # demi-vie vraie est log(2)/0.25 ~= 2.77 periodes. gbm_vol tres faible
+    # pour que la composante OU domine (comme test_ou_signal_detects_positive_theta).
+    true_theta = 0.25
+    df = synthetic_dataframe(500, drift=0.0, gbm_vol=0.0003, ou_theta=true_theta, ou_sigma=0.03, seed=6)
+    estimated = estimate_dominant_half_life(df["close"], window=100)
+    true_half_life = np.log(2) / true_theta
+    assert np.isfinite(estimated)
+    assert 0.5 * true_half_life < estimated < 2.0 * true_half_life, (
+        f"demi-vie estimee {estimated:.2f} trop eloignee de la vraie valeur {true_half_life:.2f}"
+    )
+
+
+def test_estimate_dominant_half_life_nan_when_no_reversion():
+    # seed=4 (contrairement au seed=8 du test ci-dessus) ne produit aucun
+    # faux positif de significativite sur cette serie tendancielle - verifie
+    # empiriquement, cf. commentaire equivalent plus bas.
+    df = synthetic_dataframe(300, drift=0.01, gbm_vol=0.02, ou_theta=0.0, ou_sigma=0.0, seed=4)
+    assert np.isnan(estimate_dominant_half_life(df["close"], window=100))
+
+
+def test_suggest_meanreversion_window_scales_with_half_life():
+    true_theta = 0.25
+    multiplier = 3.0
+    df = synthetic_dataframe(500, drift=0.0, gbm_vol=0.0003, ou_theta=true_theta, ou_sigma=0.03, seed=6)
+    suggested = suggest_meanreversion_window(df["close"], window=100, multiplier=multiplier, min_window=5, max_window=300)
+    expected = multiplier * np.log(2) / true_theta
+    assert suggested is not None
+    assert 5 <= suggested <= 300
+    # Tolerance large : estimate_dominant_half_life a sa propre marge d'erreur,
+    # deja verifiee separement dans test_estimate_dominant_half_life_recovers_known_value.
+    assert 0.3 * expected < suggested < 3.0 * expected
+
+
+def test_suggest_meanreversion_window_respects_bounds():
+    true_theta = 0.25
+    df = synthetic_dataframe(500, drift=0.0, gbm_vol=0.0003, ou_theta=true_theta, ou_sigma=0.03, seed=6)
+    # multiplier enorme pour forcer le clamp au plafond
+    suggested = suggest_meanreversion_window(df["close"], window=100, multiplier=1000.0, min_window=5, max_window=50)
+    assert suggested == 50
+
+
+def test_suggest_meanreversion_window_none_when_no_reversion():
+    df = synthetic_dataframe(300, drift=0.01, gbm_vol=0.02, ou_theta=0.0, ou_sigma=0.0, seed=4)
+    assert suggest_meanreversion_window(df["close"], window=100) is None
 
 
 def test_ewma_volatility_reacts_to_regime_change():

@@ -15,8 +15,10 @@ from crypto_quant.metrics import (
     calmar_ratio,
     hit_rate,
     max_drawdown,
+    permutation_test_sharpe,
     returns_from_equity,
     sharpe_ratio,
+    sharpe_significance,
     sortino_ratio,
     summarize_performance,
 )
@@ -102,8 +104,78 @@ def test_average_turnover_sums_absolute_weight_changes():
 def test_summarize_performance_returns_all_expected_keys():
     equity = pd.Series(np.linspace(100, 150, 200) + np.random.default_rng(1).normal(0, 0.5, 200))
     summary = summarize_performance(equity, periods_per_year=8760)
-    for key in ["cagr", "sharpe", "sortino", "max_drawdown", "calmar", "hit_rate", "n_periods"]:
+    for key in ["cagr", "sharpe", "sharpe_p_value", "sortino", "max_drawdown", "calmar", "hit_rate", "n_periods"]:
         assert key in summary
+
+
+def test_sharpe_significance_rejects_null_on_strong_signal():
+    # Moyenne nettement positive, faible bruit, gros echantillon -> doit
+    # rejeter tres largement l'hypothese nulle "rendement moyen = 0".
+    rng = np.random.default_rng(0)
+    returns = pd.Series(rng.normal(loc=0.01, scale=0.01, size=500))
+    result = sharpe_significance(returns)
+    assert result["n"] == 500
+    assert result["p_value"] < 0.001
+
+
+def test_sharpe_significance_does_not_reject_null_on_pure_noise():
+    rng = np.random.default_rng(0)
+    noise = pd.Series(rng.normal(loc=0.0, scale=0.01, size=500))
+    result = sharpe_significance(noise)
+    assert result["p_value"] > 0.05, "Du bruit pur ne doit pas etre declare significatif"
+
+
+def test_sharpe_significance_nan_on_constant_returns():
+    result = sharpe_significance(pd.Series([0.01] * 50))
+    assert np.isnan(result["t_stat"])
+    assert np.isnan(result["p_value"])
+
+
+def test_permutation_test_sharpe_rejects_null_when_timing_is_perfect():
+    # Strategie "oracle" : le poids applique a t (weights_history[t-1], via
+    # le shift(1) interne) vaut 1 exactement quand le rendement de l'actif
+    # a t est positif. Un timing aussi parfait ne doit presque jamais etre
+    # egale par un ordre aleatoire des memes poids -> p_value proche de 0.
+    rng = np.random.default_rng(42)
+    n = 100
+    asset_returns = pd.DataFrame({"BTC": rng.normal(0, 0.02, n)})
+
+    oracle_weights = np.zeros(n)
+    oracle_weights[:-1] = (asset_returns["BTC"].values[1:] > 0).astype(float)
+    weights_history = pd.DataFrame({"BTC": oracle_weights})
+
+    result = permutation_test_sharpe(weights_history, asset_returns, n_simulations=500, seed=1)
+    assert result["p_value"] < 0.01
+
+
+def test_permutation_test_sharpe_does_not_reject_null_when_timing_is_uninformed():
+    # Motif de poids fixe, independant des rendements (bruit pur) -> le
+    # timing reel ne doit pas se distinguer d'un ordre aleatoire.
+    rng = np.random.default_rng(42)
+    n = 100
+    asset_returns = pd.DataFrame({"BTC": rng.normal(0, 0.02, n)})
+    weights_history = pd.DataFrame({"BTC": np.tile([1.0, 0.0], n // 2)})
+
+    result = permutation_test_sharpe(weights_history, asset_returns, n_simulations=500, seed=1)
+    assert result["p_value"] > 0.1
+
+
+def test_permutation_test_sharpe_uses_only_common_columns():
+    n = 50
+    asset_returns = pd.DataFrame({"BTC": np.full(n, 0.01), "ETH": np.full(n, -0.01)})
+    weights_history = pd.DataFrame({"BTC": np.full(n, 1.0), "SOL": np.full(n, 1.0)})  # SOL absent des rendements
+
+    result = permutation_test_sharpe(weights_history, asset_returns, n_simulations=50, seed=1)
+    assert np.isfinite(result["observed_sharpe"])  # ne plante pas, ignore juste SOL
+
+
+def test_permutation_test_sharpe_nan_when_no_common_columns():
+    asset_returns = pd.DataFrame({"BTC": [0.01, 0.02]})
+    weights_history = pd.DataFrame({"ETH": [1.0, 1.0]})
+    result = permutation_test_sharpe(weights_history, asset_returns, n_simulations=10, seed=1)
+    assert np.isnan(result["observed_sharpe"])
+    assert np.isnan(result["p_value"])
+    assert result["n_simulations"] == 0
 
 
 if __name__ == "__main__":
