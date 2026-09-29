@@ -61,6 +61,49 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 7 - Premier backtest reel contre Kraken (donnees vraies, pas synthetiques) - voir Etape 1 ci-dessous pour les resultats et les bugs trouves
 - [x] Etape 7 bis - Historique profond via reconstruction depuis les trades bruts (contourne la limite ~720 bougies de l'OHLC Kraken)
 - [x] Etape 8 - Tests de significativite statistique + demi-vie adaptative (inspire de Chan, "Algorithmic Trading") - `metrics.py`, `signals.py`
+- [x] Etape 9 - Backtest sur 7 ans de donnees reelles (Binance.US) - verdict statistiquement decisif, voir ci-dessous
+
+## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
+
+**Pourquoi changer de source de donnees** : l'endpoint OHLC public de Kraken
+plafonne a ~720 bougies quel que soit `since` (etape 7), et la reconstruction
+depuis les trades bruts (etape 7 bis), bien que fonctionnelle, prenait des
+heures pour seulement 700 jours (densite de trades tres elevee sur BTC/USD
+et ETH/USD). Verifie que Binance.US honore un `since` reellement profond sur
+son endpoint OHLC natif (pas de reconstruction necessaire) : **47 500+
+bougies horaires par actif (depuis septembre 2019, ~7 ans) recuperees en
+~40 secondes au total**, plusieurs ordres de grandeur plus rapide. Prix
+verifies coherents avec Kraken sur une fenetre commune (ecart <0.1%, spread
+normal entre exchanges).
+
+**Compromis assume** : ces donnees viennent de Binance.US, pas de Kraken
+(l'exchange prevu pour l'execution reelle) - utilisees ici uniquement pour
+la recherche/validation de la strategie, pas comme source live.
+
+**Resultat du walk-forward sur BTC/USD + ETH/USD, 1h, sept. 2019 -> sept.
+2026 (8 folds, tous valides)** :
+
+| Metrique OOS | Valeur |
+|---|---|
+| Sharpe | -2.43 |
+| CAGR | -69% |
+| Max drawdown | -99.6% |
+| Hit rate | 19.5% |
+| `sharpe_significance` (etape 8) | t=-5.25, **p ≈ 0** (n=41 029) |
+
+**Verdict** : contrairement aux resultats precedents (echantillon trop petit
+pour trancher), celui-ci est **statistiquement decisif** - et dans le
+mauvais sens. Ce n'est plus "pas de preuve d'edge", c'est "edge negatif
+demontre avec une p-value quasi nulle sur un echantillon de plus de 41 000
+periodes couvrant plusieurs regimes de marche (bull 2020-21, bear 2022,
+recovery 2023-24)". Autre signal net : la meme config (ema=24/96,
+ou_window=150) a ete choisie a CHAQUE fold (stable, pas de flip-flop), mais
+son Sharpe train etait negatif dans les 8 folds - meme le "moins pire"
+candidat du grid perdait de l'argent en interne. La combinaison de signaux
+actuelle (portfolio.py) ne capture pas d'edge exploitable sur cet univers ;
+prochaine piste serieuse : revoir l'arbitrage des signaux par regime
+(Hurst) plutot que le score composite actuel, ou tester des univers/
+timeframes differents avant d'abandonner l'approche.
 
 ## Etape 8 - Significativite statistique et demi-vie adaptative
 
