@@ -33,6 +33,18 @@ quasi inobservable.
 Funding, open interest et carnet d'ordres ne sont pas encore branches : il suffit d'ajouter une
 ligne d'observation (et son operateur `H`) dans `run_enkf`.
 
+## Trend following quotidien + ciblage de volatilite (`trend.py`)
+- Signal : momentum temporel long/flat sur 20, 60, 120 et 250 jours (horizons standards, non
+  optimises), moyenne des votes -> exposition de 0 a 100 %.
+- Ciblage de vol : exposition x vol cible (40 %/an) / vol prevue, plafonnee a 1 (pas de levier).
+  Vol prevue par l'EnKF sur bougies journalieres, comparee a la vol realisee 30 j.
+- Bande de re-balancement de 10 % pour limiter les frais (10 bps par cote, spot).
+- Rapport : rendement annuel, Sharpe, max drawdown, Calmar, rendement par annee.
+
+```bash
+python -m btc_forecast.run trend --target-vol 0.4 --max-leverage 1
+```
+
 ## Lancer
 Depuis GitHub : onglet **Actions → BTC 1h Forecast → Run workflow** (choisir `enkf` ou `chronos`). Le rapport
 (`report.html`, CSV) est dans les artifacts du run.

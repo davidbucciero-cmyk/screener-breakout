@@ -9,16 +9,16 @@ on:
         type: choice
         options: [enkf, chronos]
       command:
-        description: 'backtest ou predict'
+        description: 'backtest (1h), predict (1h) ou trend (quotidien + ciblage vol)'
         default: 'backtest'
         type: choice
-        options: [backtest, predict]
+        options: [backtest, predict, trend]
       n_test:
         description: 'Nb de previsions walk-forward (backtest)'
         default: '2000'
       fee_bps:
-        description: 'Frais par cote en bps'
-        default: '5'
+        description: 'Frais par cote en bps (vide = 5 en 1h, 10 en trend)'
+        default: ''
       model:
         description: 'Modele HuggingFace (chronos uniquement)'
         default: 'amazon/chronos-bolt-small'
@@ -62,10 +62,10 @@ jobs:
           --engine ${{ inputs.engine }}
           --model "${{ inputs.model }}"
           --n-test ${{ inputs.n_test }}
-          --fee-bps ${{ inputs.fee_bps }}
+          ${{ inputs.fee_bps && format('--fee-bps {0}', inputs.fee_bps) || '' }}
 
       - name: Upload report
-        if: inputs.command == 'backtest'
+        if: inputs.command != 'predict'
         uses: actions/upload-artifact@v4
         with:
           name: btc-forecast-${{ github.run_id }}
