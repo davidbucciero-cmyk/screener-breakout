@@ -126,15 +126,15 @@ def evaluate(preds, fee_bps=5.0, thresholds=(0.0, 0.02, 0.05, 0.10), seed=0, lab
     return calib, pd.DataFrame(rows), reliability, pd.DataFrame(curves)
 
 
-def evaluate_volatility(preds, r2_hist):
+def evaluate_volatility(preds, r2_hist, windows=(24, 720), unit='h'):
     """Qualite de la prevision de variance t+1 (QLIKE, plus bas = mieux) vs variance realisee glissante.
 
     r2_hist : Series des rendements au carre sur tout l'historique (meme index que les bougies).
     """
     r2_next = preds['ret'] ** 2
     candidates = {'Modele': preds['var_forecast']}
-    for hours in (24, 720):
-        candidates[f'Variance realisee {hours}h'] = r2_hist.rolling(hours).mean().reindex(preds.index)
+    for w in windows:
+        candidates[f'Variance realisee {w}{unit}'] = r2_hist.rolling(w).mean().reindex(preds.index)
     rows = []
     for name, var in candidates.items():
         ok = var.notna() & (var > 0)
