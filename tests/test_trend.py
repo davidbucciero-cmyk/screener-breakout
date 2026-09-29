@@ -70,3 +70,40 @@ def test_portfolio_equal_sleeves():
     assert port == pytest.approx(sum(alone) / 2, rel=1e-9)
     assert set(corr) == {'Buy & hold', 'Trend ensemble (sans ciblage)', strat}
     assert (p['exposition_moyenne'] <= 1 + 1e-9).all()
+
+
+def _etf_like(n=1500, seed=7):
+    """Serie type ETF : seances du lundi au vendredi seulement, passee sur calendrier continu."""
+    from btc_forecast.data import to_calendar
+    df = synthetic_daily(n, seed=seed)
+    df = df[df.index.dayofweek < 5]
+    return to_calendar(df, df.index[-1] + pd.Timedelta(days=1))
+
+
+def test_to_calendar_fills_closed_days():
+    cal = _etf_like()
+    assert (cal.index.to_series().diff().dropna() == pd.Timedelta(days=1)).all()
+    weekend = cal.index.dayofweek >= 5
+    assert not cal.loc[weekend, 'trading'].any() and cal.loc[~weekend, 'trading'].all()
+    # Rendement nul le week-end (derniere cloture reportee).
+    r = cal['close'].pct_change()
+    assert (r[weekend] == 0).all()
+
+
+def test_no_orders_when_market_closed():
+    cal = _etf_like()
+    _, _, _, _, _, positions = run_trend(cal)
+    closed = ~cal['trading'].loc[positions.index].to_numpy()
+    changes = positions.diff().fillna(0).abs().to_numpy()
+    assert (changes[closed] == 0).all()
+
+
+def test_portfolio_mixes_crypto_and_etf():
+    from btc_forecast.trend import run_portfolio
+    crypto = synthetic_daily(1500, seed=8)
+    crypto['trading'] = True
+    etf = _etf_like()
+    crypto = crypto.loc[etf.index[0]:etf.index[-1]]
+    perf, curves, yearly, corr = run_portfolio({'BTCUSDT': crypto, 'SPY': etf})
+    assert len(curves) > 1000 and curves.notna().all().all()
+    assert set(corr['Buy & hold'].columns) == {'BTCUSDT', 'SPY'}

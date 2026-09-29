@@ -43,7 +43,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas numpy requests pytest
+          pip install pandas numpy requests pytest yfinance
           if [ "${{ inputs.engine }}" = "chronos" ]; then
             pip install torch --index-url https://download.pytorch.org/whl/cpu
             pip install -r btc_forecast/requirements.txt

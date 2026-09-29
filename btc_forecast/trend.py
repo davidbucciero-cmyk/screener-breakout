@@ -104,16 +104,20 @@ def run_trend(df, target_vol=0.40, max_leverage=1.0, fee_bps=10.0, band=0.10, ca
     }
     for lb in LOOKBACKS:
         strategies[f'Trend {lb}j seul (sans ciblage)'] = sig[f'{lb}j']
+    positions = pd.DataFrame(strategies)
+    if 'trading' in df:
+        # Marche ferme (week-end, ferie) : on garde la position de la veille, aucun ordre.
+        trading = df['trading'].loc[idx].astype(bool)
+        positions = positions.where(trading, axis=0).ffill().fillna(0.0)
 
     rows, curves = [], {}
-    for name, pos in strategies.items():
+    for name, pos in positions.items():
         stats, net = perf_stats(name, pos, ret, fee_bps)
         rows.append(stats)
         curves[name] = net
     curves = pd.DataFrame(curves)
     yearly = (1 + curves).groupby(curves.index.year).prod() - 1
     yearly.index.name = 'annee'
-    positions = pd.DataFrame(strategies)
     return pd.DataFrame(rows), curves, yearly, enkf.loc[enkf.index.isin(idx)], vols, positions
 
 

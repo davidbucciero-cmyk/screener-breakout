@@ -10,7 +10,7 @@ import logging
 import os
 
 from btc_forecast.backtest import evaluate, evaluate_volatility, walk_forward
-from btc_forecast.data import fetch_btc, fetch_btc_1h
+from btc_forecast.data import fetch_btc, fetch_btc_1h, fetch_daily
 from btc_forecast.enkf import EnKFConfig, enkf_positions, run_enkf
 from btc_forecast.model import QUANTILES, ChronosForecaster, prob_up
 from btc_forecast.report import build_html, build_portfolio_html, build_trend_html
@@ -89,7 +89,7 @@ def cmd_trend(args):
 def cmd_portfolio(args):
     os.makedirs(OUT_DIR, exist_ok=True)
     symbols = [s.strip() for s in args.symbol.split(',') if s.strip()]
-    dfs = {s: fetch_btc('1d', bars=args.days, symbol=s) for s in symbols}
+    dfs = {s: fetch_daily(s, bars=args.days) for s in symbols}
     perf, curves, yearly, corr = run_portfolio(dfs, target_vol=args.target_vol, max_leverage=args.max_leverage,
                                                fee_bps=args.fee_bps, band=args.band)
     meta = {'symbols': symbols, 'start': curves.index[0].strftime('%Y-%m-%d'),
@@ -138,7 +138,7 @@ def main():
     parser.add_argument('--fee-bps', type=float, default=None,
                         help='frais par cote en bps (defaut : 5 en 1h futures, 10 en trend spot)')
     parser.add_argument('--symbol', default='BTCUSDT',
-                        help='paire Binance (trend) ou liste separee par des virgules (portfolio)')
+                        help='paire Binance (trend) ou liste separee par des virgules (portfolio : cryptos ...USDT et ETF, ex. SPY,GLD,TLT)')
     parser.add_argument('--days', type=int, default=4000, help='trend : historique journalier a telecharger')
     parser.add_argument('--target-vol', type=float, default=0.40, help='trend : vol annuelle cible')
     parser.add_argument('--max-leverage', type=float, default=1.0, help='trend : exposition max')

@@ -95,3 +95,65 @@ def fetch_btc(interval='1h', bars=24 * 365, symbol='BTCUSDT'):
     if gaps.any():
         log.warning(f'{int(gaps.sum())} trous dans la serie {interval}')
     return df
+
+
+STOOQ_URL = 'https://stooq.com/q/d/l/'
+
+
+def _fetch_etf_yahoo(symbol):
+    import yfinance as yf
+    df = yf.Ticker(symbol).history(period='max', interval='1d', auto_adjust=True)  # ajuste dividendes
+    if df.empty:
+        raise ValueError(f'yfinance : aucune donnee pour {symbol}')
+    df = df[['Open', 'High', 'Low', 'Close', 'Volume']].rename(columns=str.lower)
+    df.index = pd.to_datetime(df.index.date).tz_localize('UTC')
+    return df
+
+
+def _fetch_etf_stooq(symbol):
+    import io
+    r = requests.get(STOOQ_URL, params={'s': f'{symbol.lower()}.us', 'i': 'd'}, timeout=30)
+    r.raise_for_status()
+    df = pd.read_csv(io.StringIO(r.text))
+    if 'Close' not in df:
+        raise ValueError(f'Stooq : reponse inattendue pour {symbol}')
+    df = df.rename(columns=str.lower).set_index('date')
+    df.index = pd.to_datetime(df.index).tz_localize('UTC')
+    return df[['open', 'high', 'low', 'close', 'volume']]
+
+
+def fetch_daily(symbol, bars=4000):
+    """Bougies journalieres cloturees sur calendrier continu (7 j/7), colonne `trading` en plus.
+
+    Crypto (…USDT) : Binance, tous les jours sont tradables.
+    ETF/actions : Yahoo (ajuste des dividendes), fallback Stooq ; les week-ends et jours feries sont
+    remplis avec la derniere cloture (rendement nul) et marques trading=False. Ainsi toutes les series
+    partagent le meme calendrier, et vol 30 j x sqrt(365) reste une vol annuelle correcte.
+    """
+    if symbol.upper().endswith('USDT'):
+        df = fetch_btc('1d', bars=bars, symbol=symbol)
+        df['trading'] = True
+        return df
+    try:
+        df = _fetch_etf_yahoo(symbol)
+        log.info(f'{len(df)} seances {symbol} depuis Yahoo Finance')
+    except Exception as e:
+        log.warning(f'Yahoo indisponible pour {symbol} ({e}), fallback Stooq (non ajuste des dividendes)')
+        df = _fetch_etf_stooq(symbol)
+        log.info(f'{len(df)} seances {symbol} depuis Stooq')
+    return to_calendar(df, pd.Timestamp.now(tz='UTC').normalize()).iloc[-bars:]
+
+
+def to_calendar(df, today):
+    """Seances de bourse -> calendrier continu jusqu'a hier ; jours sans seance = derniere cloture."""
+    df = df[~df.index.duplicated()].sort_index()
+    df = df[df.index < today].astype(float)  # seance du jour eventuellement incomplete
+    calendar = pd.date_range(df.index[0], today - pd.Timedelta(days=1), freq='D')
+    out = df.reindex(calendar)
+    out['trading'] = out['close'].notna()
+    out['close'] = out['close'].ffill()
+    for col in ('open', 'high', 'low'):
+        out[col] = out[col].fillna(out['close'])
+    if 'volume' in out:
+        out['volume'] = out['volume'].fillna(0.0)
+    return out
