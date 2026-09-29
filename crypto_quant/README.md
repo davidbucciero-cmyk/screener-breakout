@@ -59,6 +59,41 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 5 - Backtest walk-forward (`backtest.py`, `metrics.py`)
 - [x] Etape 6 - Execution (`execution.py`)
 - [x] Etape 7 - Premier backtest reel contre Kraken (donnees vraies, pas synthetiques) - voir Etape 1 ci-dessous pour les resultats et les bugs trouves
+- [x] Etape 7 bis - Historique profond via reconstruction depuis les trades bruts (contourne la limite ~720 bougies de l'OHLC Kraken)
+- [x] Etape 8 - Tests de significativite statistique + demi-vie adaptative (inspire de Chan, "Algorithmic Trading") - `metrics.py`, `signals.py`
+
+## Etape 8 - Significativite statistique et demi-vie adaptative
+
+Inspire de la lecture de *Algorithmic Trading: Winning Strategies and Their
+Rationale* (Ernest Chan, Wiley 2013) - les idees et la methodologie sont
+reutilisees ici (code et implementation propres a ce projet), pas le texte
+du livre.
+
+**metrics.py** : jusqu'ici on rapportait Sharpe/CAGR/drawdown sans jamais
+dire si le resultat est statistiquement distinguable du bruit - un Sharpe
+qui semble positif peut tres bien ne rien vouloir dire sur un petit
+echantillon. Deux nouveaux tests :
+- `sharpe_significance` : test gaussien ferme (t = mean(ret)/std(ret)*sqrt(n),
+  compare a la loi normale standard) - integre a `summarize_performance`
+  (nouvelle cle `sharpe_p_value`).
+- `permutation_test_sharpe` : permute l'ordre temporel des LIGNES de
+  `weights_history`, reapplique ces poids permutes aux vrais rendements
+  d'actifs, et mesure la fraction de permutations qui font au moins aussi
+  bien que l'observe. Teste si le TIMING reel des positions ajoute de la
+  valeur, pas seulement leur distribution/frequence.
+
+Applique retroactivement a la courbe OOS de l'etape 7 (Sharpe walk-forward
+de 0.35) : **p = 0.73** avec `sharpe_significance` - confirme formellement
+que ce resultat n'est pas distinguable du bruit (voir etape 7 ci-dessous).
+
+**signals.py** : `ou_meanreversion_signal` expose maintenant une colonne
+`half_life` (-log(2)/theta, meme regression AR(1) que le signal lui-meme).
+`estimate_dominant_half_life`/`suggest_meanreversion_window` s'en servent
+pour calibrer `ou_window` a partir de la demi-vie dominante plutot que
+uniquement par grid search - moins de parametres libres optimises en force
+brute, donc moins de risque de data-snooping. Pas encore branche
+automatiquement dans `WalkForwardValidator` (a appeler manuellement sur un
+segment train pour l'instant).
 
 ## Etape 6 - Execution (dry-run par defaut, live derriere 3 barrieres)
 
@@ -229,6 +264,14 @@ gains - profil fragile, pas un edge robuste). La config choisie est stable
 d'un fold a l'autre (bon signe methodologique - pas de flip-flop erratique),
 mais ca ne compense pas la faiblesse du signal lui-meme. A ce stade, la
 strategie ne montre pas d'edge exploitable sur cet univers/cette periode.
+
+**Confirmation formelle (etape 8)** : `sharpe_significance` (test gaussien
+ferme, cf. Chan, "Algorithmic Trading", chap. 1) applique a cette meme
+courbe OOS donne **p = 0.73** - le Sharpe de 0.35 n'est absolument pas
+distinguable du bruit statistique (73% de chances d'observer un resultat au
+moins aussi extreme sous l'hypothese nulle "pas d'edge reel"). Ca confirme
+avec un chiffre ce que l'analyse qualitative disait deja : ce backtest ne
+constitue pas une preuve d'edge.
 
 ### Installation et tests
 
