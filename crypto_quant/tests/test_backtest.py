@@ -62,6 +62,61 @@ def test_transaction_costs_reduce_final_equity():
     )
 
 
+def test_rebalance_threshold_zero_is_backward_compatible():
+    # threshold=0.0 (valeur par defaut) doit rebalancer a chaque bougie,
+    # exactement comme avant l'ajout du parametre.
+    price_data = _small_multi_asset_universe()
+    result_default = run_backtest(price_data, BacktestConfig())
+    result_explicit_zero = run_backtest(price_data, BacktestConfig(rebalance_threshold=0.0))
+    pd.testing.assert_frame_equal(result_default.weights_history, result_explicit_zero.weights_history)
+    pd.testing.assert_series_equal(result_default.equity, result_explicit_zero.equity)
+
+
+def test_rebalance_threshold_reduces_turnover():
+    # Trouve en investiguant le resultat tres negatif sur donnees reelles
+    # (etape 9, README) : sur des signaux qui bougent peu bougie a bougie, un
+    # rebalancement systematique genere un turnover (et donc un cout cumule)
+    # bien plus eleve que necessaire par rapport a l'horizon reel du signal.
+    price_data = _small_multi_asset_universe()
+    result_no_threshold = run_backtest(price_data, BacktestConfig(rebalance_threshold=0.0))
+    result_with_threshold = run_backtest(price_data, BacktestConfig(rebalance_threshold=0.1))
+
+    assert result_no_threshold.turnover_history.sum() > 0, "Le test suppose du turnover reel sans seuil"
+    assert result_with_threshold.turnover_history.sum() < result_no_threshold.turnover_history.sum(), (
+        "Une zone morte doit strictement reduire le turnover cumule"
+    )
+
+
+def test_rebalance_threshold_still_liquidates_immediately_on_circuit_breaker():
+    # Un seuil de rebalancement eleve ne doit JAMAIS empecher la liquidation
+    # d'urgence du coupe-circuit (action de risque, pas de signal). Reutilise
+    # le meme krach construit a la main que test_drawdown_circuit_breaker_
+    # halts_during_backtest_crash (voir sa docstring pour le pourquoi).
+    n_uptrend = 25
+    uptrend = 100 * (1.002 ** np.arange(n_uptrend))
+    crash_bottom = uptrend[-1] * 0.65
+    n_flat, n_recovery = 30, 40
+    flat = np.full(n_flat, crash_bottom)
+    recovery = np.linspace(crash_bottom, crash_bottom * 1.5, n_recovery)
+    close = np.concatenate([uptrend, [crash_bottom], flat, recovery])
+    index = pd.date_range("2024-01-01", periods=len(close), freq="h", tz="UTC")
+    price_data = {"CRASH": pd.DataFrame({"close": close}, index=index)}
+
+    cfg = BacktestConfig(
+        ema_fast=5, ema_slow=20, ema_vol_window=20,
+        hurst_window=20, hurst_max_lag=8, ou_window=20,
+        halt_drawdown=0.20, resume_drawdown=0.10, circuit_breaker_cooldown=20,
+        rebalance_threshold=0.9,  # seuil enorme : ne devrait jamais bloquer une liquidation d'urgence
+    )
+    result = run_backtest(price_data, cfg)
+
+    halted_periods = ~result.trading_allowed_history
+    assert halted_periods.any(), "Le test suppose qu'un coupe-circuit se declenche reellement sur ce crash simule"
+    # Sur chaque bougie ou le trading est coupe, le poids detenu doit etre nul
+    # (liquidation immediate), quel que soit rebalance_threshold.
+    assert (result.weights_history.loc[halted_periods].abs().sum(axis=1) < 1e-9).all()
+
+
 def test_drawdown_circuit_breaker_halts_during_backtest_crash():
     # Serie construite a la main (pas le generateur synthetique) pour un
     # controle total. Montee courte (juste assez pour la periode de warm-up

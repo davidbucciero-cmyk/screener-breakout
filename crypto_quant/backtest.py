@@ -50,6 +50,7 @@ class BacktestConfig:
     # Execution
     transaction_cost_bps: float = 15.0  # cout aller-retour approx (spread+frais taker Kraken)
     initial_capital: float = 10_000.0
+    rebalance_threshold: float = 0.0  # zone morte : ne rebalance que si |w_cible - w_detenu| (L1) depasse ce seuil
 
 
 @dataclass
@@ -176,20 +177,32 @@ def run_backtest(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> Ba
         w_score = target_weights_row(row_scores, top_n=cfg.top_n)
         w_tilted = inverse_vol_weights(w_score, row_vols)
         leverage = volatility_target_leverage(w_tilted, row_vols, target_vol=cfg.target_vol, max_leverage=cfg.max_leverage)
-        w_final = w_tilted * leverage if allowed else w_tilted * 0.0
+        w_target = w_tilted * leverage if allowed else w_tilted * 0.0
 
-        period_turnover = (w_final - prev_weights).abs().sum()
+        # Zone morte : si le coupe-circuit vient de couper, on liquide TOUJOURS
+        # immediatement (jamais soumis au seuil - c'est une action de risque,
+        # pas un rebalancement de signal). Sinon, ne rebalance que si l'ecart
+        # au poids cible depasse rebalance_threshold - sans ca, un signal qui
+        # ne bouge vraiment qu'a l'echelle de ses fenetres (des jours) declenche
+        # quand meme un rebalancement (et son cout) a chaque bougie.
+        if allowed and cfg.rebalance_threshold > 0:
+            proposed_turnover = (w_target - prev_weights).abs().sum()
+            w_held = prev_weights if proposed_turnover < cfg.rebalance_threshold else w_target
+        else:
+            w_held = w_target
+
+        period_turnover = (w_held - prev_weights).abs().sum()
         period_cost = period_turnover * cfg.transaction_cost_bps / 10_000
 
         asset_returns = close_df.iloc[t + 1] / close_df.iloc[t] - 1
-        portfolio_return = float((w_final * asset_returns).sum()) - period_cost
+        portfolio_return = float((w_held * asset_returns).sum()) - period_cost
 
         equity[t + 1] = equity[t] * (1 + portfolio_return)
-        weights_records[t] = w_final.reindex(symbols).values
+        weights_records[t] = w_held.reindex(symbols).values
         turnover[t] = period_turnover
         cost[t] = period_cost
 
-        prev_weights = w_final
+        prev_weights = w_held
 
     # Derniere ligne : pas de nouvelle decision (pas de rendement suivant a realiser).
     trading_allowed[-1] = breaker.step(equity[-1])
