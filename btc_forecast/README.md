@@ -45,6 +45,13 @@ ligne d'observation (et son operateur `H`) dans `run_enkf`.
 python -m btc_forecast.run trend --target-vol 0.4 --max-leverage 1
 ```
 
+## Compte demo (`paper.py`)
+Paper trading de la strategie retenue (trend ensemble + ciblage vol 30 j) sur BTC, ETH et SOL,
+10 000 USDT fictifs repartis en trois poches egales, prix de cloture Binance reels, frais 10 bps.
+Le workflow **Compte demo crypto** tourne chaque jour a 00:07 UTC, enregistre l'etat dans
+`paper_trading/` (`state.json`, `trades.csv`, `equity.csv`) et envoie un email recapitulatif
+(meme secret `EMAIL_PASSWORD` que le screener). Compare en continu a un buy & hold equipondere.
+
 ## Lancer
 Depuis GitHub : onglet **Actions → BTC 1h Forecast → Run workflow** (choisir `enkf` ou `chronos`). Le rapport
 (`report.html`, CSV) est dans les artifacts du run.
