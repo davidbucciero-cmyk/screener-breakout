@@ -67,11 +67,11 @@ def cmd_backtest(args):
 
 def cmd_trend(args):
     os.makedirs(OUT_DIR, exist_ok=True)
-    df = fetch_btc('1d', bars=args.days)
+    df = fetch_btc('1d', bars=args.days, symbol=args.symbol)
     perf, curves, yearly, enkf, vols = run_trend(df, target_vol=args.target_vol, max_leverage=args.max_leverage,
                                                  fee_bps=args.fee_bps, band=args.band)
     vol = evaluate_volatility(enkf, df['close'].pct_change() ** 2, windows=(30, 90), unit='j')
-    meta = {'start': curves.index[0].strftime('%Y-%m-%d'), 'end': curves.index[-1].strftime('%Y-%m-%d'),
+    meta = {'symbol': args.symbol, 'start': curves.index[0].strftime('%Y-%m-%d'), 'end': curves.index[-1].strftime('%Y-%m-%d'),
             'days': len(curves), 'target_vol': args.target_vol, 'max_leverage': args.max_leverage,
             'fee_bps': args.fee_bps, 'band': args.band}
     perf.to_csv(os.path.join(OUT_DIR, 'trend_strategies.csv'), index=False)
@@ -79,7 +79,7 @@ def cmd_trend(args):
     vol.to_csv(os.path.join(OUT_DIR, 'trend_volatility.csv'), index=False)
     with open(os.path.join(OUT_DIR, 'trend_report.html'), 'w') as f:
         f.write(build_trend_html(perf, curves, yearly, vol, meta))
-    log.info(f'Periode : {meta["start"]} -> {meta["end"]} ({meta["days"]} jours)')
+    log.info(f'{args.symbol} | Periode : {meta["start"]} -> {meta["end"]} ({meta["days"]} jours)')
     log.info('\n' + perf.to_string(index=False))
     log.info('\n' + vol.to_string(index=False))
     log.info('\n' + yearly.to_string(float_format=lambda v: f'{v:.1%}'))
@@ -116,6 +116,7 @@ def main():
     parser.add_argument('--n-test', type=int, default=2000, help='nb de previsions walk-forward')
     parser.add_argument('--fee-bps', type=float, default=None,
                         help='frais par cote en bps (defaut : 5 en 1h futures, 10 en trend spot)')
+    parser.add_argument('--symbol', default='BTCUSDT', help='paire Binance (trend) : BTCUSDT, ETHUSDT, SOLUSDT...')
     parser.add_argument('--days', type=int, default=4000, help='trend : historique journalier a telecharger')
     parser.add_argument('--target-vol', type=float, default=0.40, help='trend : vol annuelle cible')
     parser.add_argument('--max-leverage', type=float, default=1.0, help='trend : exposition max')

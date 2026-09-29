@@ -128,7 +128,7 @@ du {html.escape(meta["start"])} au {html.escape(meta["end"])} &middot; {html.esc
 def build_trend_html(perf, curves, yearly, vol, meta):
     chosen = ['Buy & hold', 'Trend ensemble (sans ciblage)', 'Trend ensemble + ciblage vol EnKF']
     data, chart = _chart(curves, chosen, log_scale=True)
-    body = f'''<h1>BTC/USDT quotidien &mdash; trend following + ciblage de volatilite</h1>
+    body = f'''<h1>{html.escape(meta["symbol"])} quotidien &mdash; trend following + ciblage de volatilite</h1>
 <p class="muted">Du {html.escape(meta["start"])} au {html.escape(meta["end"])} ({meta["days"]} jours)
 &middot; vol cible {meta["target_vol"]:.0%} &middot; levier max {meta["max_leverage"]}
 &middot; frais {meta["fee_bps"]} bps par cote &middot; bande de re-balancement {meta["band"]:.0%}.
@@ -149,4 +149,4 @@ surtout a reduire les pertes (max drawdown), le ciblage de vol a stabiliser le r
 
 <h2>Rendement par annee</h2>
 {_table(yearly, index=True, pct=True)}'''
-    return _page('BTC Trend Backtest', body, data)
+    return _page('Trend Backtest', body, data)
