@@ -16,6 +16,9 @@ on:
       symbol:
         description: 'Paire Binance (trend) ou liste separee par des virgules (portfolio)'
         default: 'BTCUSDT'
+      target_vol:
+        description: 'Vol annuelle cible par actif (trend / portfolio)'
+        default: '0.40'
       n_test:
         description: 'Nb de previsions walk-forward (backtest)'
         default: '2000'
@@ -66,6 +69,7 @@ jobs:
           --model "${{ inputs.model }}"
           --n-test ${{ inputs.n_test }}
           --symbol ${{ inputs.symbol }}
+          --target-vol ${{ inputs.target_vol }}
           ${{ inputs.fee_bps && format('--fee-bps {0}', inputs.fee_bps) || '' }}
 
       - name: Upload report
