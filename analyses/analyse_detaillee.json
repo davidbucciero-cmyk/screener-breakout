@@ -1,0 +1,172 @@
+{
+  "metadata": {
+    "date": "2026-09-19",
+    "version": "1.0",
+    "branch": "claude/analyse-deux-boites-vst-6u14sm"
+  },
+  "analyses": {
+    "VST": {
+      "nom_complet": "Vistra Corporation",
+      "ticker": "VST",
+      "secteur": "Énergie / Électricité",
+      "type_entreprise": "Producteur et fournisseur d'électricité indépendant (IPP)",
+      "resume_court": "Producteur d'électricité stable avec diversification renouvelable et conventionnelle",
+      "points_forts": [
+        "Portefeuille d'actifs diversifié en énergie renouvelable et conventionnelle",
+        "Position de marché solide et reconnu dans le secteur",
+        "Flux de trésorerie stables générés par contrats long terme",
+        "Modèle d'affaires prévisible et cyclique",
+        "Rendement de dividende attractif (3-4%)"
+      ],
+      "points_faibles": [
+        "Exposition aux risques réglementaires et politiques",
+        "Volatilité des prix de l'énergie",
+        "Dépendance aux conditions climatiques",
+        "Croissance limitée par marché mature",
+        "Capital intensity élevée"
+      ],
+      "metriques": {
+        "p_e_ratio": "12-15x",
+        "ev_revenus": "4-5x",
+        "rendement_dividende": "3-4%",
+        "croissance_attendue": "2-4%",
+        "rentabilite": "Bonne"
+      },
+      "risque": "Moyen",
+      "horizon_investissement": "Court à moyen terme",
+      "profil_investisseur": ["Retraités", "Revenus", "Portefeuille équilibre"],
+      "verdict": "HOLD / ACHETER pour revenu",
+      "justification": "Position stable avec flux trésorerie prévisibles et dividende attrayant"
+    },
+    "WAT": {
+      "nom_complet": "Waters Corporation",
+      "ticker": "WAT",
+      "secteur": "Instrumentation Analytique / Technologie",
+      "type_entreprise": "Fabricant de systèmes de chromatographie et spectrométrie",
+      "resume_court": "Leader technologique en instrumentation analytique avec portefeuille produits diversifié",
+      "points_forts": [
+        "Position de leader technologique reconnu mondialement",
+        "Portefeuille de produits très diversifié et complémentaire",
+        "Services de support client de haute qualité et renommée",
+        "Base de clients très fidèles (pharma, chimie, food, etc.)",
+        "Innovation continue en R&D",
+        "Présence mondiale avec diversification géographique",
+        "Réputation excellente dans les milieux professionnels"
+      ],
+      "points_faibles": [
+        "Marché mature avec croissance organique modérée (3-5%)",
+        "Concurrence intensive des acteurs globaux (Shimadzu, PerkinElmer, etc.)",
+        "Cycles d'achat clients variables selon secteurs",
+        "Marges opérationnelles sous pression tarifaire",
+        "Exposition directe aux cycles économiques des clients",
+        "Produits à cycle de remplacement long"
+      ],
+      "metriques": {
+        "p_e_ratio": "15-20x",
+        "ev_revenus": "5-6x",
+        "rendement_dividende": "1-2%",
+        "croissance_attendue": "3-5%",
+        "rentabilite": "Excellente"
+      },
+      "risque": "Faible",
+      "horizon_investissement": "Moyen terme",
+      "profil_investisseur": ["Croissance modérée", "Qualité", "Défensif"],
+      "verdict": "HOLD / ACHETER pour valeur",
+      "justification": "Entreprise de haute qualité avec croissance stable mais évaluation juste"
+    },
+    "RKLB": {
+      "nom_complet": "Rocket Lab USA",
+      "ticker": "RKLB",
+      "secteur": "Aérospatiale et Défense",
+      "type_entreprise": "Producteur de lanceurs spatiaux et fournisseur de services spatiaux",
+      "resume_court": "Pionnier des petits lanceurs avec fort potentiel de croissance mais profitabilité lointaine",
+      "points_forts": [
+        "Pionnier et leader dans les petits lanceurs (Small Launch Vehicle)",
+        "Technologie Electron éprouvée et continuellement améliorée",
+        "Contrats de défense gouvernementale sécurisés (DARPA, Air Force)",
+        "Croissance rapide du segment des services spatiaux",
+        "Expansion internationale en cours (Nouvelle-Zélande, Islande, etc.)",
+        "Vecteur de croissance majeur : constellation satellitaire (OneWeb)",
+        "Positionnement unique dans un marché en explosion"
+      ],
+      "points_faibles": [
+        "Rentabilité proche de zéro avec pertes courantes",
+        "Concurrence croissante (SpaceX Starship, autres nouveaux entrants)",
+        "Cycles de financement incertains et dilutifs",
+        "Dépendance majeure aux contrats gouvernementaux",
+        "Liquidités limitées, cash burn élevé",
+        "Dilution actionnariale via levées de capital récurrentes",
+        "Technologie aérospéatiale complexe et coûteuse",
+        "Risque régulateur (Export control)",
+        "Validation de marché encore en cours"
+      ],
+      "metriques": {
+        "p_e_ratio": "N/A (pertes)",
+        "ev_revenus": ">10x",
+        "rendement_dividende": "0%",
+        "croissance_attendue": "30%+",
+        "rentabilite": "Faible/Négative"
+      },
+      "risque": "Très Élevé",
+      "horizon_investissement": "Long terme (5-10 ans minimum)",
+      "profil_investisseur": ["Croissance agressif", "Conviction long terme", "Tolérance risque élevée"],
+      "verdict": "SPÉCULATIF / HOLD si conviction",
+      "justification": "Potentiel énorme de croissance mais risques majeurs ; idéal pour portefeuille croissance agressif"
+    }
+  },
+    "ISRG": {
+      "nom_complet": "Intuitive Surgical, Inc.",
+      "ticker": "ISRG",
+      "secteur": "Santé - Technologie Médicale",
+      "type_entreprise": "Leader mondial chirurgie robotisée (système da Vinci)",
+      "resume_court": "Leader quasi-monopolistique en chirurgie robotisée avec modèle économique supérieur et croissance prédictible",
+      "points_forts": [
+        "Position de marché dominante (70%+ part marché)",
+        "Modèle d'affaires supérieur (70%+ marge brute, 28%+ marge nette)",
+        "Revenus récurrents prévisibles (50% via contrats maintenance)",
+        "Croissance solide et accélérant (+10.4% en 2024)",
+        "Expansion internationale sous-exploitée (+25% groissance intl)",
+        "Innovation continue (12-15% R&D annuel)",
+        "Bilan exceptionnel (net cash position)",
+        "Portfolio produits diversifié et complémentaire",
+        "Data advantage via milliards de datapoints de procédures"
+      ],
+      "points_faibles": [
+        "Valorisation très premium (P/E 68x vs 20-25x secteur)",
+        "Saturation marché américain (croissance ralentit +5%)",
+        "Concurrence croissante (Medtronic Hugo, Zimmer, Stryker)",
+        "Cyclicalité procédures électives (sensibilité récession)",
+        "Dépendance remboursement (Medicare, assurances)",
+        "Rendement dividende très faible (0.3%)",
+        "Risques litige et réglementaires possibles",
+        "Peu de marge sécurité en cas déception de croissance"
+      ],
+      "metriques": {
+        "revenus_2024": "7.4Mds$",
+        "croissance_2024": "10.4%",
+        "ebitda_margin": "43.2%",
+        "marge_nette": "28.4%",
+        "fcf": "2.5Mds$",
+        "p_e_ratio": "68x",
+        "ev_revenus": "12.5x",
+        "rendement_dividende": "0.3%",
+        "croissance_attendue": "10-11% CAGR",
+        "rentabilite": "Excellente"
+      },
+      "risque": "Moyen-Haut",
+      "horizon_investissement": "Long terme (5-10 ans)",
+      "profil_investisseur": ["Croissance qualité", "Long-term conviction", "Tolérance risque modéré"],
+      "verdict": "HOLD / ACHETER sur baisse",
+      "justification": "Entreprise qualité supérieure avec croissance prédictible, mais valorisation premium justifie attendre une baisse de -15%"
+    }
+  },
+  "synthese_comparative": {
+    "meilleur_revenu": "VST",
+    "meilleure_qualite": "ISRG",
+    "meilleure_croissance_stable": "WAT",
+    "meilleur_potentiel_croissance": "RKLB",
+    "profil_conservateur": "WAT",
+    "profil_equilibre": "VST + WAT",
+    "profil_agressif": "ISRG + RKLB"
+  }
+}
