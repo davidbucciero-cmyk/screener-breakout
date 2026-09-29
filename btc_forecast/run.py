@@ -1,7 +1,8 @@
 """Usage :
     python -m btc_forecast.run backtest [--engine chronos|enkf] [--hours 8760] [--n-test 2000] [--fee-bps 5]
     python -m btc_forecast.run predict  [--engine chronos|enkf]
-    python -m btc_forecast.run trend    [--target-vol 0.4] [--max-leverage 1] [--fee-bps 10]
+    python -m btc_forecast.run trend    [--symbol BTCUSDT] [--target-vol 0.4] [--max-leverage 1] [--fee-bps 10]
+    python -m btc_forecast.run portfolio --symbol BTCUSDT,ETHUSDT,SOLUSDT
 """
 import argparse
 import json
@@ -12,8 +13,8 @@ from btc_forecast.backtest import evaluate, evaluate_volatility, walk_forward
 from btc_forecast.data import fetch_btc, fetch_btc_1h
 from btc_forecast.enkf import EnKFConfig, enkf_positions, run_enkf
 from btc_forecast.model import QUANTILES, ChronosForecaster, prob_up
-from btc_forecast.report import build_html, build_trend_html
-from btc_forecast.trend import run_trend
+from btc_forecast.report import build_html, build_portfolio_html, build_trend_html
+from btc_forecast.trend import run_portfolio, run_trend
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
@@ -68,7 +69,7 @@ def cmd_backtest(args):
 def cmd_trend(args):
     os.makedirs(OUT_DIR, exist_ok=True)
     df = fetch_btc('1d', bars=args.days, symbol=args.symbol)
-    perf, curves, yearly, enkf, vols = run_trend(df, target_vol=args.target_vol, max_leverage=args.max_leverage,
+    perf, curves, yearly, enkf, vols, _ = run_trend(df, target_vol=args.target_vol, max_leverage=args.max_leverage,
                                                  fee_bps=args.fee_bps, band=args.band)
     vol = evaluate_volatility(enkf, df['close'].pct_change() ** 2, windows=(30, 90), unit='j')
     meta = {'symbol': args.symbol, 'start': curves.index[0].strftime('%Y-%m-%d'), 'end': curves.index[-1].strftime('%Y-%m-%d'),
@@ -82,6 +83,26 @@ def cmd_trend(args):
     log.info(f'{args.symbol} | Periode : {meta["start"]} -> {meta["end"]} ({meta["days"]} jours)')
     log.info('\n' + perf.to_string(index=False))
     log.info('\n' + vol.to_string(index=False))
+    log.info('\n' + yearly.to_string(float_format=lambda v: f'{v:.1%}'))
+
+
+def cmd_portfolio(args):
+    os.makedirs(OUT_DIR, exist_ok=True)
+    symbols = [s.strip() for s in args.symbol.split(',') if s.strip()]
+    dfs = {s: fetch_btc('1d', bars=args.days, symbol=s) for s in symbols}
+    perf, curves, yearly, corr = run_portfolio(dfs, target_vol=args.target_vol, max_leverage=args.max_leverage,
+                                               fee_bps=args.fee_bps, band=args.band)
+    meta = {'symbols': symbols, 'start': curves.index[0].strftime('%Y-%m-%d'),
+            'end': curves.index[-1].strftime('%Y-%m-%d'), 'days': len(curves),
+            'target_vol': args.target_vol, 'fee_bps': args.fee_bps}
+    perf.to_csv(os.path.join(OUT_DIR, 'portfolio_strategies.csv'), index=False)
+    yearly.to_csv(os.path.join(OUT_DIR, 'portfolio_yearly.csv'))
+    with open(os.path.join(OUT_DIR, 'portfolio_report.html'), 'w') as f:
+        f.write(build_portfolio_html(perf, curves, yearly, corr, meta))
+    log.info(f'{"+".join(symbols)} | Periode : {meta["start"]} -> {meta["end"]} ({meta["days"]} jours)')
+    log.info('\n' + perf.to_string(index=False))
+    for strat, c in corr.items():
+        log.info(f'Correlations - {strat}\n' + c.round(2).to_string())
     log.info('\n' + yearly.to_string(float_format=lambda v: f'{v:.1%}'))
 
 
@@ -106,7 +127,7 @@ def cmd_predict(args):
 
 def main():
     parser = argparse.ArgumentParser(description='Prevision direction BTC 1h (Chronos zero-shot)')
-    parser.add_argument('command', choices=['backtest', 'predict', 'trend'])
+    parser.add_argument('command', choices=['backtest', 'predict', 'trend', 'portfolio'])
     parser.add_argument('--engine', choices=['chronos', 'enkf'], default='chronos')
     parser.add_argument('--model', default='amazon/chronos-bolt-small')
     parser.add_argument('--members', type=int, default=100, help='EnKF : taille de l ensemble')
@@ -116,15 +137,16 @@ def main():
     parser.add_argument('--n-test', type=int, default=2000, help='nb de previsions walk-forward')
     parser.add_argument('--fee-bps', type=float, default=None,
                         help='frais par cote en bps (defaut : 5 en 1h futures, 10 en trend spot)')
-    parser.add_argument('--symbol', default='BTCUSDT', help='paire Binance (trend) : BTCUSDT, ETHUSDT, SOLUSDT...')
+    parser.add_argument('--symbol', default='BTCUSDT',
+                        help='paire Binance (trend) ou liste separee par des virgules (portfolio)')
     parser.add_argument('--days', type=int, default=4000, help='trend : historique journalier a telecharger')
     parser.add_argument('--target-vol', type=float, default=0.40, help='trend : vol annuelle cible')
     parser.add_argument('--max-leverage', type=float, default=1.0, help='trend : exposition max')
     parser.add_argument('--band', type=float, default=0.10, help='trend : ecart min avant re-balancement')
     args = parser.parse_args()
     if args.fee_bps is None:
-        args.fee_bps = 10.0 if args.command == 'trend' else 5.0
-    {'backtest': cmd_backtest, 'predict': cmd_predict, 'trend': cmd_trend}[args.command](args)
+        args.fee_bps = 10.0 if args.command in ('trend', 'portfolio') else 5.0
+    {'backtest': cmd_backtest, 'predict': cmd_predict, 'trend': cmd_trend, 'portfolio': cmd_portfolio}[args.command](args)
 
 
 if __name__ == '__main__':

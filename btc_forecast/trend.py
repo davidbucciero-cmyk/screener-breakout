@@ -54,25 +54,29 @@ def apply_band(position, band=0.10):
     return pd.Series(out, index=position.index)
 
 
-def perf_stats(name, position, ret, fee_bps):
-    net = strategy_returns(position, ret, fee_bps)
+def return_stats(name, net):
+    """Statistiques a partir des rendements journaliers nets."""
     eq = (1 + net).cumprod()
-    n = len(net)
-    years = n / DAYS_PER_YEAR
+    years = len(net) / DAYS_PER_YEAR
     cagr = eq.iloc[-1] ** (1 / years) - 1
-    vol = net.std() * math.sqrt(DAYS_PER_YEAR)
     mdd = float((eq / eq.cummax() - 1).min())
-    turnover = position.diff().abs().fillna(position.abs()).sum() / years
     return {
         'strategie': name,
         'rendement_annuel': float(cagr),
-        'vol_annuelle': float(vol),
+        'vol_annuelle': float(net.std() * math.sqrt(DAYS_PER_YEAR)),
         'sharpe': float(net.mean() / net.std() * math.sqrt(DAYS_PER_YEAR)) if net.std() > 0 else float('nan'),
         'max_drawdown': mdd,
         'calmar': float(cagr / abs(mdd)) if mdd < 0 else float('nan'),
-        'exposition_moyenne': float(position.abs().mean()),
-        'rotation_annuelle': float(turnover),
-    }, net
+    }
+
+
+def perf_stats(name, position, ret, fee_bps):
+    net = strategy_returns(position, ret, fee_bps)
+    years = len(net) / DAYS_PER_YEAR
+    stats = return_stats(name, net)
+    stats['exposition_moyenne'] = float(position.abs().mean())
+    stats['rotation_annuelle'] = float(position.diff().abs().fillna(position.abs()).sum() / years)
+    return stats, net
 
 
 def run_trend(df, target_vol=0.40, max_leverage=1.0, fee_bps=10.0, band=0.10, calib_days=90):
@@ -109,4 +113,47 @@ def run_trend(df, target_vol=0.40, max_leverage=1.0, fee_bps=10.0, band=0.10, ca
     curves = pd.DataFrame(curves)
     yearly = (1 + curves).groupby(curves.index.year).prod() - 1
     yearly.index.name = 'annee'
-    return pd.DataFrame(rows), curves, yearly, enkf.loc[enkf.index.isin(idx)], vols
+    positions = pd.DataFrame(strategies)
+    return pd.DataFrame(rows), curves, yearly, enkf.loc[enkf.index.isin(idx)], vols, positions
+
+
+PORTFOLIO_STRATEGIES = ['Buy & hold', 'Trend ensemble (sans ciblage)', 'Trend ensemble + ciblage vol 30j']
+
+
+def run_portfolio(dfs, **kwargs):
+    """Portefeuille a poches egales, sans re-equilibrage entre poches (comme le compte demo) :
+    chaque crypto recoit 1/N du capital au depart et suit sa propre strategie.
+
+    dfs : {symbole: DataFrame OHLC journalier}. Fenetre commune a toutes les cryptos.
+    """
+    per_asset = {s: run_trend(df, **kwargs) for s, df in dfs.items()}
+    idx = None
+    for res in per_asset.values():
+        idx = res[1].index if idx is None else idx.intersection(res[1].index)
+
+    rows, curves, sleeves = [], {}, {}
+    for strat in PORTFOLIO_STRATEGIES:
+        equities = pd.DataFrame({s: (1 + res[1].loc[idx, strat]).cumprod() for s, res in per_asset.items()})
+        port_eq = equities.mean(axis=1)
+        net = port_eq.pct_change().fillna(port_eq.iloc[0] - 1)
+        name = f'Portefeuille {strat}'
+        stats = return_stats(name, net)
+        # Exposition du portefeuille = moyenne des expositions ponderee par la valeur des poches.
+        pos = pd.DataFrame({s: res[5].loc[idx, strat] for s, res in per_asset.items()})
+        stats['exposition_moyenne'] = float((pos * equities).sum(axis=1).div(equities.sum(axis=1)).mean())
+        rows.append(stats)
+        curves[name] = net
+        sleeves[strat] = pd.DataFrame({s: res[1].loc[idx, strat] for s, res in per_asset.items()})
+    # Chaque crypto seule sur la meme fenetre, pour comparaison.
+    for s, res in per_asset.items():
+        strat = 'Trend ensemble + ciblage vol 30j'
+        stats = return_stats(f'{s} seul - {strat}', res[1].loc[idx, strat])
+        stats['exposition_moyenne'] = float(res[5].loc[idx, strat].mean())
+        rows.append(stats)
+        curves[f'{s} seul - {strat}'] = res[1].loc[idx, strat]
+
+    curves = pd.DataFrame(curves)
+    yearly = (1 + curves).groupby(curves.index.year).prod() - 1
+    yearly.index.name = 'annee'
+    corr = {strat: df.corr() for strat, df in sleeves.items()}
+    return pd.DataFrame(rows), curves, yearly, corr

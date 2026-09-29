@@ -9,12 +9,12 @@ on:
         type: choice
         options: [enkf, chronos]
       command:
-        description: 'backtest (1h), predict (1h) ou trend (quotidien + ciblage vol)'
+        description: 'backtest (1h), predict (1h), trend (quotidien) ou portfolio (plusieurs cryptos)'
         default: 'backtest'
         type: choice
-        options: [backtest, predict, trend]
+        options: [backtest, predict, trend, portfolio]
       symbol:
-        description: 'Paire Binance (trend uniquement)'
+        description: 'Paire Binance (trend) ou liste separee par des virgules (portfolio)'
         default: 'BTCUSDT'
       n_test:
         description: 'Nb de previsions walk-forward (backtest)'
@@ -72,6 +72,6 @@ jobs:
         if: inputs.command != 'predict'
         uses: actions/upload-artifact@v4
         with:
-          name: forecast-${{ inputs.command }}-${{ inputs.symbol }}-${{ github.run_id }}
+          name: forecast-${{ inputs.command }}-${{ github.run_id }}
           path: btc_forecast/output/
           retention-days: 30

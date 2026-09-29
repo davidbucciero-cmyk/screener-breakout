@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import pandas as pd
 
 from btc_forecast.trend import apply_band, run_trend, trend_signals, vol_target
@@ -38,10 +39,10 @@ def test_vol_target_and_band():
 
 def test_run_trend_no_lookahead_and_sane():
     df = synthetic_daily()
-    perf, curves, yearly, enkf, vols = run_trend(df)
+    perf, curves, yearly, enkf, vols, positions = run_trend(df)
     altered = df.copy()
     altered.iloc[1200:] *= 1.5
-    _, curves2, _, _, _ = run_trend(altered)
+    _, curves2, _, _, _, _ = run_trend(altered)
     # Rendements des strategies jusqu'a t=1198 (tenus de t a t+1 <= 1199) : identiques.
     cut = df.index[1198]
     pd.testing.assert_frame_equal(curves.loc[:cut], curves2.loc[:cut])
@@ -52,3 +53,20 @@ def test_run_trend_no_lookahead_and_sane():
     # Regimes de tendance persistants : le trend doit reduire la pire perte vs buy & hold.
     assert p.loc['Trend ensemble (sans ciblage)', 'max_drawdown'] > p.loc['Buy & hold', 'max_drawdown']
     assert list(yearly.columns) == list(curves.columns)
+
+
+def test_portfolio_equal_sleeves():
+    from btc_forecast.trend import run_portfolio
+    dfs = {'AAA': synthetic_daily(1200, seed=1), 'BBB': synthetic_daily(1000, seed=2).iloc[:]}
+    dfs['BBB'].index = dfs['AAA'].index[200:]  # BBB commence 200 jours plus tard
+    perf, curves, yearly, corr = run_portfolio(dfs)
+    p = perf.set_index('strategie')
+    # Fenetre commune : demarre apres le warm-up de la crypto la plus recente.
+    assert curves.index[0] > dfs['BBB'].index[0]
+    # Portefeuille = moyenne des poches (sans re-equilibrage) : valeur finale = moyenne des valeurs finales.
+    strat = 'Trend ensemble + ciblage vol 30j'
+    port = (1 + curves[f'Portefeuille {strat}']).prod()
+    alone = [(1 + curves[f'{s} seul - {strat}']).prod() for s in dfs]
+    assert port == pytest.approx(sum(alone) / 2, rel=1e-9)
+    assert set(corr) == {'Buy & hold', 'Trend ensemble (sans ciblage)', strat}
+    assert (p['exposition_moyenne'] <= 1 + 1e-9).all()
