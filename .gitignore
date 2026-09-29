@@ -2,4 +2,4 @@ __pycache__/
 *.pyc
 *.pyo
 screener/data/screener.db
-screener/logs/
+screener/logs/btc_forecast/output/
