@@ -71,7 +71,7 @@ def test_evaluate_detects_known_signal():
     assert calib['brier_modele'] < calib['brier_freq_constante']
     assert list(curves.columns) == list(perf['strategie'])
     html = build_html(calib, perf, reliability, curves,
-                      {'model': 'fake', 'context_len': 64, 'start': 'a', 'end': 'b'}, 0)
+                      {'model': 'fake', 'context': 'contexte 64h', 'start': 'a', 'end': 'b'}, 0)
     assert '<svg' in html and 'Buy &amp; hold' in html
 
 

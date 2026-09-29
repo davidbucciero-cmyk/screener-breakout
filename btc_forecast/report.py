@@ -10,6 +10,8 @@ PCT_COLS = {'taux_reussite', 'rendement_brut', 'rendement_net', 'max_drawdown_ne
 
 def _fmt(col, v):
     if isinstance(v, float):
+        if v != v:  # NaN (aucune position prise)
+            return '&mdash;'
         if col in PCT_COLS:
             return f'{v:.2%}'
         return f'{v:.4f}'
@@ -25,7 +27,7 @@ def _table(df, index=False):
     return f'<div class="tw"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def build_html(calib, perf, reliability, curves, meta, fee_bps):
+def build_html(calib, perf, reliability, curves, meta, fee_bps, vol=None):
     chosen = [perf['strategie'].iloc[0], 'Buy & hold', 'Momentum (meme sens que la bougie precedente)']
     equity = (1 + curves[chosen]).cumprod()
     step = max(1, len(equity) // 600)
@@ -39,10 +41,15 @@ def build_html(calib, perf, reliability, curves, meta, fee_bps):
     css_dark = ''.join(f'{v}:{d};' for v, _, d in SERIES)
     legend = ''.join(f'<span class="lg"><i style="background:var({s["var"]})"></i>{html.escape(s["name"])}</span>'
                      for s in data['series'])
+    vol_section = ''
+    if vol is not None:
+        vol_section = ('<h2>Prevision de volatilite</h2><p class="muted">QLIKE plus bas = meilleure prevision '
+                       'de la variance de la prochaine bougie. Utile pour le sizing meme sans edge directionnel.</p>'
+                       + _table(vol))
     calib_rows = ''.join(f'<tr><td>{k}</td><td>{_fmt(k, v)}</td></tr>' for k, v in calib.items())
 
     return f'''<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>BTC 1h Chronos</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>BTC 1h Forecast</title>
 <style>
 :root{{color-scheme:light;--bg:#fcfcfb;--fg:#0b0b0b;--fg2:#52514e;--grid:#e6e5e0;{css_light}}}
 @media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{color-scheme:dark;--bg:#1a1a19;--fg:#fff;--fg2:#c3c2b7;--grid:#383835;{css_dark}}}}}
@@ -55,9 +62,9 @@ th,td{{text-align:left;padding:4px 8px;border-bottom:1px solid var(--grid);white
 #chart{{position:relative}} svg{{width:100%;height:320px;display:block}}
 #tip{{position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--grid);padding:6px 8px;font-size:12px;display:none;white-space:nowrap}}
 </style></head><body>
-<h1>BTC/USDT 1h &mdash; direction de la prochaine bougie (Chronos, zero-shot)</h1>
+<h1>BTC/USDT 1h &mdash; direction de la prochaine bougie ({html.escape(meta["model"])})</h1>
 <p class="muted">Modele {html.escape(meta["model"])} &middot; {calib["n_previsions"]} previsions walk-forward
-du {html.escape(meta["start"])} au {html.escape(meta["end"])} &middot; contexte {meta["context_len"]}h
+du {html.escape(meta["start"])} au {html.escape(meta["end"])} &middot; {html.escape(meta["context"])}
 &middot; frais {fee_bps} bps par cote. Chaque prevision n'utilise que les bougies deja cloturees.</p>
 
 <h2>Calibration des probabilites</h2>
@@ -72,6 +79,7 @@ du {html.escape(meta["start"])} au {html.escape(meta["end"])} &middot; contexte 
 <div>{legend}</div>
 <div id="chart"><svg id="svg" role="img" aria-label="Courbe de capital des strategies"></svg><div id="tip"></div></div>
 
+{vol_section}
 <h2>Fiabilite par tranche de P(hausse)</h2>
 {_table(reliability, index=True)}
 

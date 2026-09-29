@@ -79,7 +79,7 @@ def _perf(name, position, ret, fee_bps):
     }, net
 
 
-def evaluate(preds, fee_bps=5.0, thresholds=(0.0, 0.02, 0.05, 0.10), seed=0):
+def evaluate(preds, fee_bps=5.0, thresholds=(0.0, 0.02, 0.05, 0.10), seed=0, label='Chronos', extra_positions=None):
     """Metriques de calibration + performance des strategies vs baselines naives."""
     ret, p = preds['ret'], preds['p_up']
     up = (ret > 0).astype(float)
@@ -98,7 +98,11 @@ def evaluate(preds, fee_bps=5.0, thresholds=(0.0, 0.02, 0.05, 0.10), seed=0):
     rows, curves = [], {}
     for th in thresholds:
         pos = np.where(p > 0.5 + th, 1, np.where(p < 0.5 - th, -1, 0))
-        name = f'Chronos long/short (seuil {0.5 + th:.0%}/{0.5 - th:.0%})'
+        name = f'{label} long/short (seuil {0.5 + th:.1%}/{0.5 - th:.1%})'
+        perf, net = _perf(name, pos, ret, fee_bps)
+        rows.append(perf)
+        curves[name] = net
+    for name, pos in (extra_positions or {}).items():
         perf, net = _perf(name, pos, ret, fee_bps)
         rows.append(perf)
         curves[name] = net
@@ -120,3 +124,24 @@ def evaluate(preds, fee_bps=5.0, thresholds=(0.0, 0.02, 0.05, 0.10), seed=0):
         n=('up', 'size'), p_up_moyenne=('p_up', 'mean'), freq_hausse=('up', 'mean'))
 
     return calib, pd.DataFrame(rows), reliability, pd.DataFrame(curves)
+
+
+def evaluate_volatility(preds, r2_hist):
+    """Qualite de la prevision de variance t+1 (QLIKE, plus bas = mieux) vs variance realisee glissante.
+
+    r2_hist : Series des rendements au carre sur tout l'historique (meme index que les bougies).
+    """
+    r2_next = preds['ret'] ** 2
+    candidates = {'Modele': preds['var_forecast']}
+    for hours in (24, 720):
+        candidates[f'Variance realisee {hours}h'] = r2_hist.rolling(hours).mean().reindex(preds.index)
+    rows = []
+    for name, var in candidates.items():
+        ok = var.notna() & (var > 0)
+        v, y = var[ok], r2_next[ok]
+        rows.append({
+            'prevision_variance': name,
+            'qlike': float((np.log(v) + y / v).mean()),
+            'correlation_vol_prevue_vs_abs_rendement': float(np.corrcoef(np.sqrt(v), np.sqrt(y))[0, 1]),
+        })
+    return pd.DataFrame(rows)
