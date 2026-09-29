@@ -61,7 +61,8 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 7 - Premier backtest reel contre Kraken (donnees vraies, pas synthetiques) - voir Etape 1 ci-dessous pour les resultats et les bugs trouves
 - [x] Etape 7 bis - Historique profond via reconstruction depuis les trades bruts (contourne la limite ~720 bougies de l'OHLC Kraken)
 - [x] Etape 8 - Tests de significativite statistique + demi-vie adaptative (inspire de Chan, "Algorithmic Trading") - `metrics.py`, `signals.py`
-- [x] Etape 9 - Backtest sur 7 ans de donnees reelles (Binance.US) - verdict statistiquement decisif, voir ci-dessous
+- [x] Etape 9 - Backtest sur 7 ans de donnees reelles (Binance.US) - voir Etape 9 bis pour le verdict corrige
+- [x] Etape 9 bis - Le resultat negatif etait un artefact de turnover (1h), pas un edge negatif reel - confirme "pas d'edge" en 1d
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -91,19 +92,68 @@ la recherche/validation de la strategie, pas comme source live.
 | Hit rate | 19.5% |
 | `sharpe_significance` (etape 8) | t=-5.25, **p ≈ 0** (n=41 029) |
 
-**Verdict** : contrairement aux resultats precedents (echantillon trop petit
-pour trancher), celui-ci est **statistiquement decisif** - et dans le
-mauvais sens. Ce n'est plus "pas de preuve d'edge", c'est "edge negatif
-demontre avec une p-value quasi nulle sur un echantillon de plus de 41 000
-periodes couvrant plusieurs regimes de marche (bull 2020-21, bear 2022,
-recovery 2023-24)". Autre signal net : la meme config (ema=24/96,
-ou_window=150) a ete choisie a CHAQUE fold (stable, pas de flip-flop), mais
-son Sharpe train etait negatif dans les 8 folds - meme le "moins pire"
-candidat du grid perdait de l'argent en interne. La combinaison de signaux
-actuelle (portfolio.py) ne capture pas d'edge exploitable sur cet univers ;
-prochaine piste serieuse : revoir l'arbitrage des signaux par regime
-(Hurst) plutot que le score composite actuel, ou tester des univers/
-timeframes differents avant d'abandonner l'approche.
+**Verdict initial (corrige plus bas - voir Etape 9 bis)** : contrairement
+aux resultats precedents (echantillon trop petit pour trancher), celui-ci
+semblait **statistiquement decisif** - et dans le mauvais sens. Meme config
+(ema=24/96, ou_window=150) choisie a CHAQUE fold (stable, pas de
+flip-flop), mais Sharpe train negatif dans les 8 folds.
+
+## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
+
+**Investigation** (le Sharpe de -2.43 avec p≈0 semblait suspect : un signal
+simplement "sans edge" devrait donner un Sharpe proche de 0, pas fortement
+negatif de facon aussi certaine). Diagnostic sur le backtest 1h ci-dessus :
+
+- Correlation poids-detenu / rendement suivant ≈ 0 (-0.005 BTC, +0.001 ETH) :
+  le signal ne capture rien de mesurable, ni dans un sens ni dans l'autre.
+- **Cout de transaction cumule : 654% du capital** sur tout le backtest.
+  Turnover moyen ~9.2%/heure, alors que les fenetres des signaux choisis
+  (`ou_window=150`, `ema_slow=96`, soit 4 a 6 JOURS) impliquent un horizon
+  bien plus lent - le systeme rebalance beaucoup plus souvent que ce que son
+  propre signal justifie.
+- Coupe-circuit de drawdown : actif seulement 1.8% du temps, pas le
+  principal coupable.
+
+Une zone morte de rebalancement (`BacktestConfig.rebalance_threshold`,
+ajoutee suite a cette investigation - ne rebalance que si l'ecart au poids
+cible depasse le seuil, le coupe-circuit continue de liquider immediatement
+quel que soit le seuil) **n'a que tres peu aide** : meme a
+`rebalance_threshold=0.5` (seuil enorme), le cout cumule ne baisse que de
+654% a 584%, Sharpe de -2.43 a -2.04. Le turnover ne vient pas d'ajustements
+graduels de position mais de bascules frequentes investi/plat - une simple
+zone morte sur la distance de poids n'y change pas grand-chose.
+
+**Ce qui marche : passer en journalier.** Meme code, memes signaux, juste
+le pas de temps (1h -> 1d, target_vol et circuit_breaker_cooldown
+recalibres comme a l'etape 7) :
+
+| | 1h (turnover mal calibre) | 1d (turnover cohere avec l'horizon du signal) |
+|---|---|---|
+| Cout cumule sur tout le backtest | 654% | **27%** |
+| Backtest simple - Sharpe | -3.69 | 0.39 |
+| Backtest simple - max drawdown | -100% (quasi-ruine) | -71% |
+| Walk-forward OOS - Sharpe | -2.43 | **0.036** |
+| Walk-forward OOS - p-value (`sharpe_significance`) | ≈0 | **0.95** |
+| Folds valides | 8/8 | 6/6 |
+
+**Verdict corrige** : le -2.43 a 1h n'etait PAS la preuve d'un edge negatif
+reel - c'etait un artefact de sur-trading a une granularite mal adaptee aux
+fenetres du signal. Au bon pas de temps, le verdict redevient "pas d'edge
+detectable" (Sharpe OOS quasi nul, p=0.95, aucune signification), mais cette
+fois confirme sur un echantillon large et propre (950 jours de test,
+6 folds, plusieurs regimes 2020-2026) plutot que sur les petits echantillons
+des etapes precedentes. Signal revelateur en prime : le Sharpe TRAIN est
+fortement positif dans les 6 folds (0.6 a 2.1) alors que l'OOS retombe a
+quasi-zero - la signature classique d'un surapprentissage sur du bruit, pas
+d'un edge reel. C'est exactement ce que la discipline walk-forward est
+censee detecter, et elle le fait.
+
+**A retenir methodologiquement** : un Sharpe fortement negatif ET
+statistiquement significatif merite d'etre investigue avant d'etre pris pour
+argent comptant - un signal sans edge devrait donner un resultat proche de
+zero, pas fortement negatif de facon certaine. Ici, la cause etait un
+decalage entre la granularite de trading et l'horizon reel des signaux, pas
+un bug de signe ni un edge negatif reel.
 
 ## Etape 8 - Significativite statistique et demi-vie adaptative
 
