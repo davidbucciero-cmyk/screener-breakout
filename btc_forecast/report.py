@@ -150,3 +150,32 @@ surtout a reduire les pertes (max drawdown), le ciblage de vol a stabiliser le r
 <h2>Rendement par annee</h2>
 {_table(yearly, index=True, pct=True)}'''
     return _page('Trend Backtest', body, data)
+
+
+def build_portfolio_html(perf, curves, yearly, corr, meta):
+    chosen = [f'Portefeuille {s}' for s in ('Buy & hold', 'Trend ensemble (sans ciblage)',
+                                            'Trend ensemble + ciblage vol 30j')]
+    data, chart = _chart(curves, chosen, log_scale=True)
+    corr_html = ''
+    for strat, c in corr.items():
+        c = c.copy()
+        c.index.name = 'crypto'
+        corr_html += f'<h3>{html.escape(strat)}</h3>' + _table(c, index=True)
+    body = f'''<h1>Portefeuille {html.escape(' + '.join(s.replace('USDT', '') for s in meta["symbols"]))} &mdash; trend + ciblage de volatilite</h1>
+<p class="muted">Du {html.escape(meta["start"])} au {html.escape(meta["end"])} ({meta["days"]} jours, fenetre commune)
+&middot; poches egales au depart, sans re-equilibrage entre poches (comme le compte demo)
+&middot; vol cible {meta["target_vol"]:.0%} par crypto &middot; frais {meta["fee_bps"]} bps par cote.</p>
+
+<h2>Performance (nette de frais)</h2>
+{_table(perf)}
+
+<h2>Courbe de capital (echelle log, nette de frais)</h2>
+{chart}
+
+<h2>Correlation des rendements journaliers entre cryptos</h2>
+<p class="muted">Plus la correlation est basse, plus la diversification reduit le risque du portefeuille.</p>
+{corr_html}
+
+<h2>Rendement par annee</h2>
+{_table(yearly, index=True, pct=True)}'''
+    return _page('Crypto Trend Portfolio', body, data)
