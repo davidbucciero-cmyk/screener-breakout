@@ -164,7 +164,7 @@ def build_portfolio_html(perf, curves, yearly, corr, meta):
     body = f'''<h1>Portefeuille {html.escape(' + '.join(s.replace('USDT', '') for s in meta["symbols"]))} &mdash; trend + ciblage de volatilite</h1>
 <p class="muted">Du {html.escape(meta["start"])} au {html.escape(meta["end"])} ({meta["days"]} jours, fenetre commune)
 &middot; poches egales au depart, sans re-equilibrage entre poches (comme le compte demo)
-&middot; vol cible {meta["target_vol"]:.0%} par crypto &middot; frais {meta["fee_bps"]} bps par cote.</p>
+&middot; vol cible {meta["target_vol"]:.0%} par actif (plafond 100 %) &middot; frais {meta["fee_bps"]} bps par cote.</p>
 
 <h2>Performance (nette de frais)</h2>
 {_table(perf)}
@@ -172,7 +172,7 @@ def build_portfolio_html(perf, curves, yearly, corr, meta):
 <h2>Courbe de capital (echelle log, nette de frais)</h2>
 {chart}
 
-<h2>Correlation des rendements journaliers entre cryptos</h2>
+<h2>Correlation des rendements journaliers entre actifs</h2>
 <p class="muted">Plus la correlation est basse, plus la diversification reduit le risque du portefeuille.</p>
 {corr_html}
 
