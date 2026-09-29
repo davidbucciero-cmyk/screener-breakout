@@ -13,6 +13,9 @@ on:
         default: 'backtest'
         type: choice
         options: [backtest, predict, trend]
+      symbol:
+        description: 'Paire Binance (trend uniquement)'
+        default: 'BTCUSDT'
       n_test:
         description: 'Nb de previsions walk-forward (backtest)'
         default: '2000'
@@ -62,12 +65,13 @@ jobs:
           --engine ${{ inputs.engine }}
           --model "${{ inputs.model }}"
           --n-test ${{ inputs.n_test }}
+          --symbol ${{ inputs.symbol }}
           ${{ inputs.fee_bps && format('--fee-bps {0}', inputs.fee_bps) || '' }}
 
       - name: Upload report
         if: inputs.command != 'predict'
         uses: actions/upload-artifact@v4
         with:
-          name: btc-forecast-${{ github.run_id }}
+          name: forecast-${{ inputs.command }}-${{ inputs.symbol }}-${{ github.run_id }}
           path: btc_forecast/output/
           retention-days: 30

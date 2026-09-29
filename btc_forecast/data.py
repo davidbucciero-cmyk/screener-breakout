@@ -12,7 +12,7 @@ BINANCE_URLS = [
     'https://data-api.binance.vision/api/v3/klines',
     'https://api.binance.com/api/v3/klines',
 ]
-COINBASE_URL = 'https://api.exchange.coinbase.com/products/BTC-USD/candles'
+COINBASE_URL = 'https://api.exchange.coinbase.com/products/{product}/candles'
 INTERVAL_MS = {'1h': 3_600_000, '1d': 86_400_000}
 
 
@@ -51,7 +51,8 @@ def _fetch_binance(url, symbol, interval, bars):
     return df.drop(columns=['open_time', 'close_time'])
 
 
-def _fetch_coinbase(interval, bars):
+def _fetch_coinbase(interval, bars, symbol):
+    product = symbol.replace('USDT', '') + '-USD'  # BTCUSDT -> BTC-USD
     step = pd.Timedelta(milliseconds=INTERVAL_MS[interval])
     end = pd.Timestamp.now(tz='UTC').floor(step)
     start = end - bars * step
@@ -59,7 +60,7 @@ def _fetch_coinbase(interval, bars):
     cursor = start
     while cursor < end:
         chunk_end = min(cursor + 300 * step, end)
-        batch = _get(COINBASE_URL, {'granularity': int(step.total_seconds()), 'start': cursor.isoformat(),
+        batch = _get(COINBASE_URL.format(product=product), {'granularity': int(step.total_seconds()), 'start': cursor.isoformat(),
                                     'end': chunk_end.isoformat()})
         rows.extend(batch)
         cursor = chunk_end
@@ -86,7 +87,7 @@ def fetch_btc(interval='1h', bars=24 * 365, symbol='BTCUSDT'):
         except requests.RequestException as e:
             log.warning(f'Binance indisponible ({url}) : {e}')
     if df is None or df.empty:
-        df = _fetch_coinbase(interval, bars)
+        df = _fetch_coinbase(interval, bars, symbol)
         log.info(f'{len(df)} bougies {interval} depuis Coinbase (fallback)')
     df = df.drop_duplicates('time').sort_values('time').set_index('time')
     df = df.astype(float)
