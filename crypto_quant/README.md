@@ -66,6 +66,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente (`ema_skip`) + activation de `top_n` - aucun des deux ne change le verdict OOS sur l'univers BTC/ETH ; `ema_skip` seul en walk-forward isole ameliore nettement le Sharpe OOS (0.53, toujours pas significatif, p=0.36)
 - [x] Etape 11 - Fonction de reponse bornee de Baz et al. (2015) sur le signal EMA (`ema_bounded_response`) - neutre sur cet univers, jamais choisie sur train face au signal lineaire
 - [x] Etape 12 - Signal de tendance multi-horizon (3 paires EMA, `ema_multi_horizon`) - nettement PIRE que le signal a un seul horizon sur cet univers, jamais choisi sur train
+- [x] Etape 13 - Overlay de regime de marche (`market_regime_symbol`, croisement EMA BTC) - MEILLEUR resultat OOS de toute la session (Sharpe 0.99, p=0.086-0.106), mais toujours pas significatif a 5% ; a lire avec prudence (voir nuances)
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -297,6 +298,73 @@ Le code reste disponible et teste (`ema_multi_horizon`, 96/96 tests
 passent) pour d'eventuels tests futurs sur un univers plus large ou
 d'autres parametres d'horizon, mais n'est PAS recommande sur la
 configuration actuelle.
+
+## Etape 13 - Overlay de regime de marche (Starkiller Capital, 2023)
+
+**Contexte** : Drogen, Hoffstein & Otte (Starkiller Capital, SSRN 4322637)
+montrent que superposer un filtre de regime base sur BTC (cash integral
+quand BTC est en tendance baissiere) au-dessus d'un portefeuille de
+momentum cross-sectionnel fait passer leur rendement annualise de 37.8% a
+93.3% et leur drawdown max de 75% a 45%. Contrairement aux ajustements
+precedents (par-actif), c'est un gate au niveau du PORTEFEUILLE ENTIER,
+base sur un seul actif de reference.
+
+**Implemente** : `signals.market_regime_signal(close, fast=5, slow=50)`
+(booleen risk-on/risk-off, croisement EMA simple non normalise), cable via
+`BacktestConfig.market_regime_symbol` - force tout le portefeuille en cash
+immediatement (meme logique que le coupe-circuit de drawdown) quand
+l'actif de reference est risk-off, quels que soient les scores par actif.
+
+**Teste sur le meme cache Binance.US (daily, BTC/USD + ETH/USD, 2019-2026),
+BTC/USD comme actif de reference** :
+
+| Test | Sharpe | p-value (gaussien) | p-value (permutation) | CAGR | Max DD |
+|---|---|---|---|---|---|
+| Plein historique, sans overlay | 0.392 | - | - | +7.9% | -71.0% |
+| Plein historique, overlay BTC | **0.805** | - | - | **+25.7%** | **-41.0%** |
+| Walk-forward isole (overlay vs rien), OOS | **0.988** | **0.086** | **0.106** | **+32.6%** | -40.7% |
+| Walk-forward combine (overlay x `ema_skip`), OOS | 0.988 | 0.086 | 0.106 | +32.6% | -40.7% |
+
+**C'est le meilleur resultat OOS de toute la session** - et de loin
+(p=0.086-0.106 contre p=0.35-0.95 pour toutes les pistes precedentes). Le
+selecteur walk-forward choisit l'overlay dans 6/6 folds, jamais l'inverse.
+Combine avec `ema_skip` (etape 10), le selecteur choisit systematiquement
+`ema_skip=0` : une fois l'overlay actif, `ema_skip` n'apporte plus rien -
+les deux captent en partie le meme effet (eviter d'etre expose pendant les
+baisses), et l'overlay le fait plus directement. Verifie aussi avec le
+test de permutation (pas seulement le test gaussien, cf. etape 8) pour
+tenir compte des queues epaisses de la crypto documentees par Han, Kang &
+Ryu (2026, lus a la meme session) : les deux tests convergent raisonnablement
+(0.086 vs 0.106), contrairement aux tests d'Arefev (2026) qui divergeaient
+fortement entre eux sur le momentum cross-sectionnel pur.
+
+**Nuances importantes avant de crier victoire** :
+- **p reste au-dessus de 0.05.** A 0.086-0.106, ce n'est significatif qu'au
+  seuil (plus laxiste) de 10%, pas au seuil conventionnel de 5%. Encourageant,
+  pas prouve.
+- **Le portefeuille est en cash 73% du temps.** Ce n'est plus vraiment une
+  strategie de "trading actif" mais un market-timing binaire tres
+  concentre - la nature du risque pris a profondement change (peu de
+  periodes actives, chacune portant plus de poids sur le resultat final).
+- **Risque de concentration sur un seul evenement** : le Sharpe train
+  decroit progressivement d'un fold a l'autre (1.63 -> 1.90 -> 1.71 -> 1.32
+  -> 1.24 -> 0.90) a mesure que l'historique s'etend au-dela du bear market
+  2022 (Terra/Luna, FTX) - une partie significative du gain pourrait venir
+  d'avoir evite CE crash particulier plutot que d'un edge repete et
+  independant a travers plusieurs cycles. Un filtre EMA(5,50) binaire sur
+  un seul actif reste, par construction, un pari sur peu d'evenements
+  extremes distincts sur seulement 7 ans de donnees.
+- Hit rate tres bas (13.5%) : attendu avec 73% de cash (bougies a poids nul
+  comptees comme non gagnantes), pas un signal d'alarme en soi, mais a
+  interpreter avec la meme prudence que le reste.
+
+**Verdict** : la piste la plus prometteuse trouvee a ce jour sur cet
+univers, cohérente avec la recherche recue a la meme session (Starkiller,
+Han/Kang/Ryu) qui identifie systematiquement la PROTECTION A LA BAISSE
+(pas l'alpha en bull market) comme la seule forme d'edge momentum qui
+survit a un examen rigoureux en crypto. Pas encore statistiquement prouve
+(p>0.05), et la dependance possible a un seul gros evenement de marche
+appelle a la prudence plutot qu'a la conclusion definitive.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
