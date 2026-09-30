@@ -63,6 +63,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 8 - Tests de significativite statistique + demi-vie adaptative (inspire de Chan, "Algorithmic Trading") - `metrics.py`, `signals.py`
 - [x] Etape 9 - Backtest sur 7 ans de donnees reelles (Binance.US) - voir Etape 9 bis pour le verdict corrige
 - [x] Etape 9 bis - Le resultat negatif etait un artefact de turnover (1h), pas un edge negatif reel - confirme "pas d'edge" en 1d
+- [x] Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente (`ema_skip`) + activation de `top_n` - aucun des deux ne change le verdict OOS sur l'univers BTC/ETH
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -97,6 +98,78 @@ aux resultats precedents (echantillon trop petit pour trancher), celui-ci
 semblait **statistiquement decisif** - et dans le mauvais sens. Meme config
 (ema=24/96, ou_window=150) choisie a CHAQUE fold (stable, pas de
 flip-flop), mais Sharpe train negatif dans les 8 folds.
+
+## Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente et top_n
+
+**Contexte** : comparaison de `ema_trend_signal` avec le momentum academique
+classique (Jegadeesh-Titman 1993, et la version "retail" de Foltice &
+Langer 2015 identifiee dans la recherche SSRN). Deux ecarts identifies :
+(1) le signal EMA continu n'exclut jamais la periode la plus recente de son
+calcul, contrairement au "12-1 mois" academique (qui exclut le mois le plus
+recent de la periode de formation pour eviter la contamination par le
+retournement a tres court terme - exactement le chevauchement avec le
+domaine du signal OU mean-reversion qui a cause le bug de turnover de
+l'etape 9/9bis) ; (2) `top_n` existait deja dans `BacktestConfig`/
+`portfolio.py` mais n'avait jamais ete fixe a une valeur non-`None`.
+
+**Implemente** :
+- `signals.ema_trend_signal(..., skip=0)` : les EMA rapide/lente sont
+  calculees sur `close.shift(skip)` plutot que sur `close`. Cable dans
+  `BacktestConfig.ema_skip` (defaut 0, retro-compatible).
+- `top_n` teste pour la premiere fois sur donnees reelles (`top_n=1`, le
+  seul choix sense avec 2 actifs : rotation BTC/ETH plutot que detention
+  simultanee).
+
+**Resultats sur le cache Binance.US (daily, 2019-2026, meme univers
+BTC/USD + ETH/USD qu'aux etapes 9/9bis)** :
+
+| Test | Sharpe | CAGR |
+|---|---|---|
+| Plein historique, defaut (`ema_skip=0`, `top_n=None`) | 0.392 | 7.9% |
+| Plein historique, `ema_skip=1` | 0.426 | 9.5% |
+| Plein historique, `ema_skip=2` | 0.507 | 13.6% |
+| Plein historique, `ema_skip=3` | **0.536** | **15.1%** |
+| Plein historique, `ema_skip=5` | 0.501 | 13.2% |
+| Plein historique, `top_n=1` (vs `top_n=None` ci-dessus) | 0.364 | 6.5% |
+
+`ema_skip` ameliore le Sharpe en-sample sur tout l'historique (0.39 -> 0.54
+a skip=3j) ; `top_n=1` le degrade legerement (0.39 -> 0.36). Logique pour
+`top_n` : avec seulement 2 actifs assez correles (BTC/ETH), concentrer sur
+le meilleur score sacrifie la diversification sans vraiment gagner en
+selectivite - la litterature retail momentum (Foltice & Langer) suppose un
+univers de plusieurs dizaines de titres avec une vraie dispersion
+cross-sectionnelle a exploiter, pas 2 actifs.
+
+**Mais en walk-forward (le seul chiffre qui compte, cf. discipline
+anti-data-snooping de l'etape 5)**, ajouter `top_n=1` et `ema_skip` comme
+candidats dans la grille de selection degrade le resultat OOS par rapport a
+la reference de l'etape 9bis :
+
+| | Grille etape 9bis (5 configs) | Grille etendue (+6 configs top_n/ema_skip) |
+|---|---|---|
+| Sharpe OOS | 0.036 | -0.005 |
+| p-value | 0.95 | 0.99 |
+| Folds valides | 6/6 | 6/6 |
+
+Le walk-forward choisit `top_n=1, ema_skip=2` sur train dans 4 des 6 folds
+(Sharpe train 0.7 a 1.7 - l'air prometteur en-sample), mais l'OOS ne
+s'ameliore pas, il empire legerement. **Plus de candidats dans la grille =
+plus d'occasions de choisir, par fold, une config qui a l'air bonne sur
+train sans generaliser** - le meme phenomene de surapprentissage que celui
+deja diagnostique a l'etape 9bis, juste avec une grille plus large cette
+fois.
+
+**Verdict** : les deux ajustements sont maintenant disponibles et testes
+(89/89 tests unitaires passent, aucune regression), mais ni l'un ni l'autre
+ne change la conclusion de fond sur cet univers a 2 actifs - aucune
+configuration testee a ce jour n'a un edge OOS statistiquement distinguable
+de zero (p toujours > 0.9). Le gain en-sample de `ema_skip` (interessant,
+mais mesure sur les 7 memes annees qui servent aussi a le choisir) merite
+un test walk-forward isole (pas noye dans une grille a 11 candidats) avant
+d'en tirer une conclusion ; `top_n` restera probablement de peu d'utilite
+tant que l'univers se limite a BTC/ETH - son interet academique (Foltice &
+Langer) suppose un univers bien plus large pour exploiter une vraie
+dispersion cross-sectionnelle entre actifs.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
