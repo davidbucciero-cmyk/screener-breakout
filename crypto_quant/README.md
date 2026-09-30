@@ -69,6 +69,8 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 13 - Overlay de regime de marche (`market_regime_symbol`, croisement EMA BTC) - resultat INITIAL (Sharpe 0.99, p=0.086-0.106) trouve ensuite CONTAMINE par un bug de donnees, corrige et re-teste a l'etape 13 bis
 - [x] Etape 13 bis - **BUG CRITIQUE CORRIGE** : trou de calendrier non detecte (suspension Binance.US juil. 2023-fev. 2025) contaminait tous les backtests Binance.US depuis l'etape 9bis ; verdict corrige pour l'overlay BTC : Sharpe OOS 0.59, p=0.43-0.45 - toujours pas significatif, et le gain qui semblait spectaculaire s'effondre largement une fois le bug corrige
 - [x] Etape 14 - Test sur un univers elargi (11 actifs Binance.US, 2019-2023) - `top_n` et l'overlay BTC, qui semblaient utiles sur BTC/ETH seuls, deviennent NETTEMENT NEGATIFS en walk-forward OOS (Sharpe -0.78 a -1.33) sur cet univers plus large
+- [x] Etape 15 - ADX comme filtre de tendance alternatif au Hurst (`trend_gate_source`) - bat nettement le Hurst en walk-forward sur BTC/ETH (Sharpe OOS 0.77 vs jamais choisi, p=0.33) - la piste la plus solide de la session en walk-forward a 2 configs
+- [x] Etape 16 - Moteur a trades discrets (`discrete_trading.py` : stop ATR, breakeven, trailing, filtre de session) en parallele du backtester a poids continus - Sharpe train 1.74/p=0.013 mais Sharpe test 0.59/p=0.51 sur un simple split 60/40 (pas encore de walk-forward complet) ; le drawdown (~-6%) reste remarquablement stable entre train et test, contrairement au Sharpe
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -509,6 +511,119 @@ probleme n'est pas le manque de dispersion cross-sectionnelle (cet univers
 en a, largement) mais plutot que cette dispersion vient d'actifs dont le
 comportement (et le risque de survie) est trop different de BTC/ETH pour
 que les mecanismes calibres sur ces deux-la se transposent utilement.
+
+## Etape 15 - ADX comme filtre de tendance alternatif au Hurst
+
+**Contexte** : proposition utilisateur d'un filtre anti-ranging base sur
+l'ADX (Average Directional Index, Wilder 1978). Plutot que de l'ajouter
+en confiance, il est cable comme ALTERNATIVE testable au trend_gate
+derive du Hurst (`BacktestConfig.trend_gate_source`), pour comparer
+lequel generalise le mieux en walk-forward - meme discipline que pour
+toutes les autres pistes de la session.
+
+**Implemente** : `signals.adx(high, low, close, period=14)` (lissage de
+Wilder approxime par `ewm(alpha=1/period)`) + `signals.adx_trend_gate`
+(conversion en gate [0,1]). Ne remplace que `trend_gate` (force de la
+tendance) - `meanrev_gate` reste toujours derive du Hurst, l'ADX n'ayant
+pas d'equivalent "retour a la moyenne".
+
+**Teste sur le cache Binance.US corrige (BTC/USD + ETH/USD, 2019-2023)** :
+
+| Test | Sharpe | p-value | CAGR |
+|---|---|---|---|
+| Plein historique, Hurst (defaut) | 0.527 | - | +14.6% |
+| Plein historique, ADX | **1.134** | - | **+61.4%** |
+| Walk-forward isole (Hurst vs ADX), OOS | - (jamais choisi) | - | - |
+| Walk-forward isole, ADX | **0.769** | **0.326** | +31.1% |
+
+**L'ADX bat nettement le Hurst** : choisi dans 6/6 folds du walk-forward,
+jamais l'inverse. C'est le meilleur resultat "mecanisme unique" trouve sur
+BTC/ETH cette session (avant le moteur a trades discrets de l'etape 16).
+Combine avec l'overlay BTC (etape 13 bis), le resultat se DEGRADE
+legerement (Sharpe 0.582, p=0.457) : l'ADX filtre deja bien les phases
+sans tendance, l'overlay devient redondant voire legerement contre-
+productif par-dessus.
+
+**Verdict** : toujours pas significatif a 5% (p=0.326), mais clairement la
+piste la plus solide identifiee sur cet univers a ce jour via un
+changement de mecanisme unique.
+
+## Etape 16 - Moteur a trades discrets (stop ATR / breakeven / trailing / session)
+
+**Contexte** : demande de faire evoluer le projet vers un "bot autonome"
+a trades discrets (entree/stop-loss), plutot que le modele a poids
+continus rebalances en continu utilise jusqu'ici. Construit comme moteur
+PARALLELE (`discrete_trading.py`), pas un remplacement - les deux
+partagent les memes briques statistiques (Hurst/ADX, EMA trend+skip, OU
+mean-reversion, overlay de regime BTC).
+
+**Mecanique** : chaque actif est soit FLAT soit dans un TRADE UNIQUE
+(long-only). Stop initial = `entry_price - atr_stop_multiple * ATR`
+(`risk.atr`, etape 4 - jamais cable jusqu'ici faute d'un moteur a trades
+discrets). Breakeven automatique des que le gain latent atteint
+`breakeven_r_multiple * risque_initial` (stop -> prix d'entree). Trailing
+stop ATR apres breakeven (`plus_haut_depuis_entree - trailing_atr_multiple
+* ATR`, ne redescend jamais). Sizing par risque fixe par trade
+(`risk_per_trade` / distance de stop en %), different du vol-targeting du
+modele a poids continus. Filtre de session horaire optionnel : mecanisme
+fonctionnel et teste, mais **sans effet reel sur des bougies
+journalieres** (un seul horodatage par jour) - ne devient un vrai filtre
+que sur des donnees intraday.
+
+**Bugs trouves et corriges pendant le developpement** (le processus de
+test a lui-meme ete utile ici) :
+- Fuite de cash a poids plein (weight=1.0) : le cout de transaction preleve
+  EN PLUS d'une notional deja egale a 100% de l'equity rendait `cash`
+  legerement negatif, gonflant l'exposition enregistree au-dessus du
+  plafond `max_position_fraction` - corrige en dimensionnant la notional
+  pour reserver le cout.
+- L'exposition deja engagee (`committed`) lors de nouvelles entrees doit
+  etre mesuree en mark-to-market (valeur courante des positions), pas via
+  le poids fige au moment de l'entree d'une position deja ouverte.
+- Plusieurs scenarios de test construits avec un prix DETERMINISTE sans
+  bruit produisaient des allers-retours signal/re-entree artificiels
+  (`ou_meanreversion_signal` detecte une "significativite" numerique sur
+  un residu quasi nul) - corriges en testant systematiquement sur un prix
+  bruite. Ce phenomene revele un risque reel a garder en tete : reutiliser
+  `composite_score` (concu pour un rebalancement continu) comme simple
+  declencheur d'entree/sortie discrete peut provoquer des sorties/
+  reentrees frequentes meme en tendance (whipsaw).
+
+**Teste sur le cache Binance.US corrige, `trend_gate_source="adx"`
+(la config la plus prometteuse de l'etape 15), pas encore de walk-forward
+complet pour ce moteur (seulement un split train/test 60/40 simple, aucun
+reglage choisi sur le train) :**
+
+| | Plein historique (en-sample) | Train (60%) | Test (40%, jamais vu) |
+|---|---|---|---|
+| Sharpe | 1.302 | 1.744 | **0.593** |
+| p-value (gaussien) | 0.014 | 0.013 | **0.506** |
+| p-value (permutation) | - | 0.129 | 0.102 |
+| Max drawdown | -6.5% | -6.5% | **-5.8%** |
+| CAGR | +13.2% | +20.7% | +4.9% |
+
+**Meme signature de surapprentissage que le reste de la session** : Sharpe
+et p-value se degradent nettement du train au test (1.74/p=0.013 ->
+0.59/p=0.51) - la significativite en-sample ne tenait pas. Mais une
+caracteristique reste stable et notable : **le drawdown maximum reste
+tres bas des les deux segments (-6.5% puis -5.8%)**, bien en-deca de tout
+ce qu'on a vu avec le modele a poids continus (typiquement -30% a -70%).
+C'est une propriete STRUCTURELLE du stop-loss dur (pas un artefact
+statistique comme le Sharpe) : elle ne depend pas de la precision du
+signal d'entree, seulement de la discipline de sortie. Le test de
+permutation, plus conservateur que le test gaussien sur les DEUX segments
+(p~0.10-0.13), confirme une fois de plus l'utilite d'avoir les deux tests
+(etape 8).
+
+**Verdict** : le moteur fonctionne (122/122 tests passent, bugs reels
+trouves et corriges par le processus de test), mais comme pour toutes les
+autres pistes de cette session, **le Sharpe et sa significativite ne
+resistent pas a un vrai decoupage train/test** - seul le controle du
+drawdown (via le stop-loss) est une amelioration structurelle averee,
+independamment de toute question de significativite statistique du
+rendement. Pas encore de walk-forward complet (grille de configs +
+selection sur train uniquement) pour ce moteur - a construire si cette
+piste doit etre creusee plus avant.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
