@@ -66,7 +66,8 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente (`ema_skip`) + activation de `top_n` - aucun des deux ne change le verdict OOS sur l'univers BTC/ETH ; `ema_skip` seul en walk-forward isole ameliore nettement le Sharpe OOS (0.53, toujours pas significatif, p=0.36)
 - [x] Etape 11 - Fonction de reponse bornee de Baz et al. (2015) sur le signal EMA (`ema_bounded_response`) - neutre sur cet univers, jamais choisie sur train face au signal lineaire
 - [x] Etape 12 - Signal de tendance multi-horizon (3 paires EMA, `ema_multi_horizon`) - nettement PIRE que le signal a un seul horizon sur cet univers, jamais choisi sur train
-- [x] Etape 13 - Overlay de regime de marche (`market_regime_symbol`, croisement EMA BTC) - MEILLEUR resultat OOS de toute la session (Sharpe 0.99, p=0.086-0.106), mais toujours pas significatif a 5% ; a lire avec prudence (voir nuances)
+- [x] Etape 13 - Overlay de regime de marche (`market_regime_symbol`, croisement EMA BTC) - resultat INITIAL (Sharpe 0.99, p=0.086-0.106) trouve ensuite CONTAMINE par un bug de donnees, corrige et re-teste a l'etape 13 bis
+- [x] Etape 13 bis - **BUG CRITIQUE CORRIGE** : trou de calendrier non detecte (suspension Binance.US juil. 2023-fev. 2025) contaminait tous les backtests Binance.US depuis l'etape 9bis ; verdict corrige pour l'overlay BTC : Sharpe OOS 0.59, p=0.43-0.45 - toujours pas significatif, et le gain qui semblait spectaculaire s'effondre largement une fois le bug corrige
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -301,6 +302,15 @@ configuration actuelle.
 
 ## Etape 13 - Overlay de regime de marche (Starkiller Capital, 2023)
 
+> **CORRECTION (etape 13 bis)** : les chiffres OOS de cette section
+> (Sharpe 0.99, p=0.086-0.106) etaient CONTAMINES par un bug de donnees
+> decouvert juste apres - un trou de calendrier de 586 jours (suspension du
+> trading USD sur Binance.US) traite comme le rendement d'une seule bougie.
+> Corrige et re-teste a l'etape 13 bis : le verdict change nettement
+> (Sharpe OOS 0.59, p=0.43-0.45 - plus proche du bruit). Section conservee
+> pour la tracabilite methodologique, mais NE PAS CITER ces chiffres comme
+> resultat final - se referer a l'etape 13 bis.
+
 **Contexte** : Drogen, Hoffstein & Otte (Starkiller Capital, SSRN 4322637)
 montrent que superposer un filtre de regime base sur BTC (cash integral
 quand BTC est en tendance baissiere) au-dessus d'un portefeuille de
@@ -358,13 +368,84 @@ fortement entre eux sur le momentum cross-sectionnel pur.
   comptees comme non gagnantes), pas un signal d'alarme en soi, mais a
   interpreter avec la meme prudence que le reste.
 
-**Verdict** : la piste la plus prometteuse trouvee a ce jour sur cet
-univers, cohérente avec la recherche recue a la meme session (Starkiller,
-Han/Kang/Ryu) qui identifie systematiquement la PROTECTION A LA BAISSE
-(pas l'alpha en bull market) comme la seule forme d'edge momentum qui
-survit a un examen rigoureux en crypto. Pas encore statistiquement prouve
-(p>0.05), et la dependance possible a un seul gros evenement de marche
-appelle a la prudence plutot qu'a la conclusion definitive.
+**Verdict (avant correction - voir etape 13 bis)** : la piste la plus
+prometteuse trouvee a ce jour sur cet univers, cohérente avec la recherche
+recue a la meme session (Starkiller, Han/Kang/Ryu) qui identifie
+systematiquement la PROTECTION A LA BAISSE (pas l'alpha en bull market)
+comme la seule forme d'edge momentum qui survit a un examen rigoureux en
+crypto. Pas encore statistiquement prouve (p>0.05), et la dependance
+possible a un seul gros evenement de marche appelle a la prudence plutot
+qu'a la conclusion definitive.
+
+## Etape 13 bis - Bug critique corrige : trou de calendrier Binance.US
+
+**Decouverte** (en preparant l'univers elargi demande juste apres l'etape
+13) : Binance.US a suspendu le trading USD du **14 juillet 2023** au
+**19 fevrier 2025** (procès SEC de juin 2023, perte des partenaires
+bancaires) - un trou de **586 jours sans aucune bougie**, partage par
+TOUS les actifs USD de l'exchange (verifie sur les 13 paires testees pour
+l'univers elargi, pas seulement BTC/ETH).
+
+`run_backtest` iterant PAR POSITION (t -> t+1), jamais par date (cf. sa
+docstring), ce trou etait traite comme le rendement d'une SEULE bougie :
+
+```
+BTC/USD : 2023-07-14 (25 073$) -> 2025-02-19 (96 584$) => "rendement" d'une bougie : +285%
+ETH/USD : 2023-07-14 (1 595$)  -> 2025-02-19 (2 725$)  => "rendement" d'une bougie : +71%
+```
+
+Cet artefact a contamine silencieusement TOUS les backtests Binance.US
+depuis l'etape 9bis (EMA, vol glissante, Hurst et P&L simule autour de ce
+point) - y compris le "meilleur resultat de la session" de l'etape 13.
+
+**Corrige** :
+- `data.largest_contiguous_segment(price_data, max_gap_multiple=3.0)` :
+  detecte un trou de calendrier commun a tous les actifs et ne garde que
+  le plus grand segment continu.
+- `backtest._assert_no_calendar_gaps`, appele dans `_align_universe` sur
+  le calendrier des PRIX BRUTS (avant tout calcul de signal - important :
+  verifier sur l'index APRES calcul des signaux aurait aussi declenche sur
+  des NaN de signal parfaitement legitimes, ex. vol glissante nulle sur un
+  prix plat, qui ne sont PAS des trous de marche reels). Leve une erreur
+  explicite plutot que de laisser le backtester produire un resultat
+  silencieusement fausse - 5 nouveaux tests, 105/105 passent.
+
+**Re-test de l'etape 13 avec les donnees corrigees** (plus grand segment
+continu disponible : 2019-09-18 -> 2023-07-14, 1396 bougies - on perd la
+reprise 2024-2025, mais on garde COVID 2020, le bull 2021 et le bear
+2022) :
+
+| Test | Sharpe | p (gaussien) | p (permutation) | CAGR | Max DD |
+|---|---|---|---|---|---|
+| Plein historique corrige, sans overlay | 0.527 | - | - | +14.6% | -57.4% |
+| Plein historique corrige, overlay BTC | 1.251 | - | - | +49.8% | -26.5% |
+| Walk-forward corrige, sans overlay (grille etape 9bis) OOS | 0.292 | 0.721 | - | +2.4% | -51.3% |
+| **Walk-forward corrige, overlay BTC seul, OOS** | **0.588** | **0.452** | **0.430** | **+16.8%** | **-29.5%** |
+
+**Le verdict change nettement.** L'overlay reste directionnellement utile
+(meilleur Sharpe, bien meilleur drawdown, choisi dans 6/6 folds face a
+"pas d'overlay") et l'amelioration en-sample reste substantielle (Sharpe
+0.53 -> 1.25). Mais l'amelioration OOS qui semblait spectaculaire
+(Sharpe 0.99, p=0.086-0.106 - etape 13) s'effondre une fois le bug
+corrige : **Sharpe OOS 0.59, p=0.43-0.45** sur les deux tests de
+significativite - nettement plus proche du bruit que ce qu'on croyait.
+Le resultat precedent etait donc en bonne partie un artefact du trou de
+calendrier (le fold 3 de l'etape 13, 2022-10-24 -> 2025-03-09, contenait
+exactement la ligne fictive +285%/+71% - un fold entier gonfle par une
+seule ligne de donnees fausse).
+
+**A retenir methodologiquement** (deuxieme occurrence du meme principe que
+l'etape 9bis) : un resultat qui semble "trop beau" merite d'etre
+investigue avant d'etre publie comme une decouverte - ici, en construisant
+l'univers elargi demande par l'utilisateur, la simple verification des
+dates de debut/fin par actif a suffi a reveler le trou. Le fait que les
+10 autres actifs testes pour l'univers elargi (LTC, BCH, XRP, ADA, ETC,
+XLM, ZEC, DASH, NEO, ZRX, BAT) partagent TOUS le meme trou (ou pire,
+certains ont carrement disparu de Binance.US en juin 2023 - DASH, NEO,
+ZRX, BAT n'ont plus de donnees apres cette date) confirme que c'est un
+evenement reel de l'exchange, pas un artefact de notre pipeline de fetch -
+mais notre pipeline de BACKTEST, lui, avait un vrai bug en ne le
+detectant pas.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
