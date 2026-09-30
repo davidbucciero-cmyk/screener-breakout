@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 
 from crypto_quant.signals import (
+    adx,
+    adx_trend_gate,
     baz_response,
     ema_trend_signal,
     estimate_dominant_half_life,
@@ -114,6 +116,28 @@ def test_market_regime_signal_risk_on_in_uptrend_risk_off_in_downtrend():
     assert up_gate.dtype == bool
     assert bool(up_gate.iloc[-1]) is True, "Tendance haussiere soutenue doit finir risk-on"
     assert bool(down_gate.iloc[-1]) is False, "Tendance baissiere soutenue doit finir risk-off"
+
+
+def test_adx_high_in_strong_trend():
+    df = synthetic_dataframe(300, drift=0.004, gbm_vol=0.003, momentum_rho=0.6, ou_theta=0.0, ou_sigma=0.0, seed=13)
+    adx_series = adx(df["high"], df["low"], df["close"], period=14)
+    assert adx_series.iloc[-1] > 25, f"ADX attendu > 25 sur tendance forte, obtenu {adx_series.iloc[-1]:.1f}"
+
+
+def test_adx_low_in_ranging_market():
+    df = synthetic_dataframe(300, drift=0.0, gbm_vol=0.0005, ou_theta=0.3, ou_sigma=0.02, seed=14)
+    adx_series = adx(df["high"], df["low"], df["close"], period=14)
+    assert adx_series.iloc[-1] < 25, f"ADX attendu < 25 sur marche sans tendance, obtenu {adx_series.iloc[-1]:.1f}"
+
+
+def test_adx_trend_gate_bounds_and_monotonic():
+    values = pd.Series([0.0, 10.0, 20.0, 30.0, 40.0, 50.0])
+    gate = adx_trend_gate(values, threshold=20.0, cap=40.0)
+    assert gate.iloc[0] == 0.0
+    assert gate.iloc[2] == 0.0  # au seuil
+    assert gate.iloc[4] == 1.0  # au plafond
+    assert gate.iloc[5] == 1.0  # au-dela du plafond, sature
+    assert (gate.diff().dropna() >= 0).all(), "le gate doit etre croissant avec l'ADX"
 
 
 def test_baz_response_bounded_and_sign_preserving():

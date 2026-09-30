@@ -24,6 +24,8 @@ from .metrics import sharpe_ratio
 from .portfolio import build_universe_scores, target_weights_row
 from .risk import DrawdownCircuitBreaker, inverse_vol_weights, volatility_target_leverage
 from .signals import (
+    adx,
+    adx_trend_gate,
     baz_response,
     ema_trend_signal,
     ewma_volatility,
@@ -48,6 +50,10 @@ class BacktestConfig:
     hurst_window: int = 100
     hurst_min_lag: int = 2
     hurst_max_lag: int = 20
+    trend_gate_source: str = "hurst"  # "hurst" (defaut) ou "adx" - lequel filtre le mieux le "ranging" (a comparer)
+    adx_period: int = 14
+    adx_threshold: float = 20.0
+    adx_cap: float = 40.0
     ou_window: int = 100
     ou_significance_t: float = 2.0
     ewma_lambda: float = 0.94
@@ -103,15 +109,26 @@ def compute_symbol_signals(df: pd.DataFrame, cfg: BacktestConfig) -> pd.DataFram
     ou_signal = ou_meanreversion_signal(df["close"], window=cfg.ou_window, significance_t=cfg.ou_significance_t)["signal"]
     ewma_vol = ewma_volatility(df["close"], lam=cfg.ewma_lambda)
 
-    return pd.DataFrame(
-        {
-            "close": df["close"],
-            "hurst": hurst,
-            "ema_trend": ema_trend,
-            "ou_signal": ou_signal,
-            "ewma_vol": ewma_vol,
-        }
-    )
+    columns = {
+        "close": df["close"],
+        "hurst": hurst,
+        "ema_trend": ema_trend,
+        "ou_signal": ou_signal,
+        "ewma_vol": ewma_vol,
+    }
+
+    if cfg.trend_gate_source == "adx":
+        if "high" not in df.columns or "low" not in df.columns:
+            raise ValueError(
+                "trend_gate_source='adx' necessite les colonnes 'high' et 'low' dans price_data - "
+                "absentes ici (donnees close-only)."
+            )
+        adx_series = adx(df["high"], df["low"], df["close"], period=cfg.adx_period)
+        columns["trend_gate"] = adx_trend_gate(adx_series, threshold=cfg.adx_threshold, cap=cfg.adx_cap)
+    elif cfg.trend_gate_source != "hurst":
+        raise ValueError(f"trend_gate_source invalide : {cfg.trend_gate_source!r} (attendu 'hurst' ou 'adx')")
+
+    return pd.DataFrame(columns)
 
 
 def _assert_no_calendar_gaps(index: pd.DatetimeIndex, max_gap_multiple: float = 3.0) -> None:
@@ -154,6 +171,16 @@ def _assert_no_calendar_gaps(index: pd.DatetimeIndex, max_gap_multiple: float = 
             "seule periode - utiliser data.largest_contiguous_segment(price_data) avant de "
             "construire l'univers passe a run_backtest/WalkForwardValidator."
         )
+
+
+def _score_columns(cfg: BacktestConfig) -> List[str]:
+    """Colonnes a extraire de chaque actif aligne pour build_universe_scores -
+    'trend_gate' seulement quand trend_gate_source='adx' (absente sinon,
+    portfolio.composite_score retombe alors sur le gate derive du Hurst)."""
+    cols = ["hurst", "ema_trend", "ou_signal"]
+    if cfg.trend_gate_source == "adx":
+        cols.append("trend_gate")
+    return cols
 
 
 def _align_universe(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> Dict[str, pd.DataFrame]:
@@ -202,7 +229,7 @@ def compute_live_weights(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfi
     if not symbols or len(next(iter(aligned.values()))) == 0:
         raise ValueError("Pas assez de donnees alignees apres warm-up des signaux pour calculer des poids live")
 
-    raw_scores = build_universe_scores({s: aligned[s][["hurst", "ema_trend", "ou_signal"]] for s in symbols})
+    raw_scores = build_universe_scores({s: aligned[s][_score_columns(cfg)] for s in symbols})
     vol_df = pd.DataFrame({s: aligned[s]["ewma_vol"] for s in symbols})
 
     last_scores = raw_scores.iloc[-1]
@@ -227,7 +254,7 @@ def run_backtest(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> Ba
     if n < 2:
         raise ValueError("Pas assez de donnees alignees apres warm-up des signaux pour lancer un backtest")
 
-    raw_scores = build_universe_scores({s: aligned[s][["hurst", "ema_trend", "ou_signal"]] for s in symbols})
+    raw_scores = build_universe_scores({s: aligned[s][_score_columns(cfg)] for s in symbols})
     vol_df = pd.DataFrame({s: aligned[s]["ewma_vol"] for s in symbols})
     close_df = pd.DataFrame({s: aligned[s]["close"] for s in symbols})
 

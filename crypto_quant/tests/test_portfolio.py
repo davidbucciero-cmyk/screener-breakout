@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pandas as pd
 
-from crypto_quant.portfolio import build_universe_scores, compute_target_weights_history, target_weights_row
+from crypto_quant.portfolio import build_universe_scores, composite_score, compute_target_weights_history, target_weights_row
 from crypto_quant.signals import ema_trend_signal, ou_meanreversion_signal, rolling_hurst
 from crypto_quant.synthetic import synthetic_dataframe
 
@@ -61,6 +61,25 @@ def test_composite_score_signs_match_expected_regime():
     # RANDOM doit avoir un score proche de zero en moyenne (pas d'edge) :
     # on verifie l'amplitude moyenne plutot qu'une valeur exacte a un instant t.
     assert scores["RANDOM"].dropna().abs().mean() < scores["TREND_UP"].dropna().abs().mean()
+
+
+def test_composite_score_trend_gate_override_replaces_hurst_derived_gate():
+    # hurst=0.1 impliquerait normalement trend_gate=0 (meanrev_gate=0.8) -
+    # un trend_gate ADX passe explicitement doit prendre le dessus sur le
+    # gate derive du Hurst, meanrev_gate restant lui TOUJOURS derive du Hurst.
+    idx = pd.RangeIndex(3)
+    hurst = pd.Series([0.1, 0.1, 0.1], index=idx)
+    ema_trend = pd.Series([1.0, 1.0, 1.0], index=idx)
+    ou_signal = pd.Series([1.0, 1.0, 1.0], index=idx)
+    adx_gate = pd.Series([1.0, 1.0, 1.0], index=idx)
+
+    default = composite_score(hurst, ema_trend, ou_signal)
+    overridden = composite_score(hurst, ema_trend, ou_signal, trend_gate=adx_gate)
+
+    assert (default["trend_gate"] == 0.0).all(), "sans override, H=0.1 doit donner trend_gate=0"
+    assert (overridden["trend_gate"] == 1.0).all(), "l'override doit remplacer le gate derive du Hurst"
+    assert (overridden["meanrev_gate"] == default["meanrev_gate"]).all(), "meanrev_gate reste derive du Hurst"
+    assert (overridden["raw_score"] > default["raw_score"]).all(), "le score doit refleter le trend_gate plus eleve"
 
 
 def test_target_weights_row_is_long_only_and_normalized():

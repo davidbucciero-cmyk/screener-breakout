@@ -24,7 +24,9 @@ def _gate(diff_from_half: pd.Series) -> pd.Series:
     return diff_from_half.clip(lower=0.0, upper=0.5) / 0.5
 
 
-def composite_score(hurst: pd.Series, ema_trend: pd.Series, ou_signal: pd.Series) -> pd.DataFrame:
+def composite_score(
+    hurst: pd.Series, ema_trend: pd.Series, ou_signal: pd.Series, trend_gate: Optional[pd.Series] = None
+) -> pd.DataFrame:
     """Fusionne les signaux d'un actif en un score composite unique.
 
     Renvoie un DataFrame avec les colonnes : trend_gate, meanrev_gate,
@@ -32,8 +34,15 @@ def composite_score(hurst: pd.Series, ema_trend: pd.Series, ou_signal: pd.Series
     traite comme "pas de contribution" (0), pas comme une valeur manquante a
     propager - l'absence de signal doit reduire la conviction, pas invalider
     tout le score.
+
+    trend_gate : passe explicitement pour remplacer le gate derive du Hurst
+    (ex: signals.adx_trend_gate, pour comparer ADX vs Hurst comme filtre de
+    tendance - cf. README). meanrev_gate reste TOUJOURS derive du Hurst :
+    l'ADX ne mesure que la force de la tendance, il n'a pas d'equivalent
+    "retour a la moyenne" a lui substituer.
     """
-    trend_gate = _gate(hurst - 0.5)
+    if trend_gate is None:
+        trend_gate = _gate(hurst - 0.5)
     meanrev_gate = _gate(0.5 - hurst)
 
     raw_score = trend_gate * ema_trend.fillna(0.0) + meanrev_gate * ou_signal.fillna(0.0)
@@ -51,12 +60,14 @@ def build_universe_scores(signals_by_symbol: Dict[str, pd.DataFrame]) -> pd.Data
     """Assemble les scores composites de tous les actifs en un seul DataFrame.
 
     signals_by_symbol[symbol] doit avoir les colonnes 'hurst', 'ema_trend',
-    'ou_signal', indexees par date. Renvoie un DataFrame indexe par date,
-    une colonne par symbole (raw_score).
+    'ou_signal', indexees par date. Une colonne 'trend_gate' optionnelle
+    remplace le gate derive du Hurst (cf. composite_score). Renvoie un
+    DataFrame indexe par date, une colonne par symbole (raw_score).
     """
     scores = {}
     for symbol, df in signals_by_symbol.items():
-        comp = composite_score(df["hurst"], df["ema_trend"], df["ou_signal"])
+        trend_gate = df["trend_gate"] if "trend_gate" in df.columns else None
+        comp = composite_score(df["hurst"], df["ema_trend"], df["ou_signal"], trend_gate=trend_gate)
         scores[symbol] = comp["raw_score"]
     return pd.DataFrame(scores)
 

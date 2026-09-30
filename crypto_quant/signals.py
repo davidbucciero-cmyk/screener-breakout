@@ -369,3 +369,50 @@ def ewma_volatility(close: pd.Series, lam: float = 0.94) -> pd.Series:
     log_returns = np.log(close / close.shift(1))
     ewma_var = log_returns.pow(2).ewm(alpha=(1 - lam), adjust=False).mean()
     return np.sqrt(ewma_var).rename("ewma_vol")
+
+
+def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """Average Directional Index (Wilder, 1978) : force de la tendance,
+    independamment de sa direction.
+
+    Alternative candidate au filtre de regime par Hurst (rolling_hurst) -
+    a tester laquelle des deux generalise le mieux en walk-forward plutot
+    que de supposer que l'une est meilleure que l'autre. Difference
+    conceptuelle importante : l'ADX ne mesure QUE la force de la tendance
+    (haute = tendance forte, quel que soit son sens), il n'a pas
+    d'equivalent du cote "retour a la moyenne" contrairement au Hurst (qui
+    est un seul continuum -1 tendance/+1 retour a la moyenne via H<0.5 ou
+    H>0.5). L'ADX ne remplace donc que trend_gate, jamais meanrev_gate.
+
+    Lissage de Wilder approxime par un ewm(alpha=1/period) - approximation
+    standard, l'initialisation exacte de Wilder (SMA puis recurrence)
+    converge vers le meme regime apres quelques periodes.
+    """
+    prev_close = close.shift(1)
+    true_range = pd.concat(
+        [high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    ).max(axis=1)
+
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=high.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=high.index)
+
+    alpha = 1.0 / period
+    smoothed_tr = true_range.ewm(alpha=alpha, adjust=False).mean()
+    smoothed_plus_dm = plus_dm.ewm(alpha=alpha, adjust=False).mean()
+    smoothed_minus_dm = minus_dm.ewm(alpha=alpha, adjust=False).mean()
+
+    plus_di = 100 * smoothed_plus_dm / smoothed_tr.replace(0, np.nan)
+    minus_di = 100 * smoothed_minus_dm / smoothed_tr.replace(0, np.nan)
+
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=alpha, adjust=False).mean().rename("adx")
+
+
+def adx_trend_gate(adx_series: pd.Series, threshold: float = 20.0, cap: float = 40.0) -> pd.Series:
+    """Convertit l'ADX en gate [0,1] comparable a portfolio._gate(hurst-0.5) :
+    0 sous `threshold` (pas de tendance detectable - equivalent "ranging"),
+    monte lineairement jusqu'a 1 en `cap` (tendance forte).
+    """
+    return ((adx_series - threshold) / (cap - threshold)).clip(lower=0.0, upper=1.0).rename("adx_trend_gate")

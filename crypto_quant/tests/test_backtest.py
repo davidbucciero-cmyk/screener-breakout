@@ -236,6 +236,32 @@ def test_ema_multi_horizon_changes_signal_and_weights():
     )
 
 
+def test_trend_gate_source_adx_changes_weights_vs_hurst():
+    # Verifie le cablage de BacktestConfig.trend_gate_source='adx' :
+    # doit changer la trajectoire de poids par rapport au Hurst (defaut).
+    price_data = _small_multi_asset_universe()
+    result_hurst = run_backtest(price_data, BacktestConfig(trend_gate_source="hurst"))
+    result_adx = run_backtest(price_data, BacktestConfig(trend_gate_source="adx"))
+
+    assert not result_hurst.weights_history.equals(result_adx.weights_history), (
+        "trend_gate_source='adx' doit produire une trajectoire de poids differente du Hurst"
+    )
+
+
+def test_trend_gate_source_adx_requires_high_low_columns():
+    price_data = {"X": pd.DataFrame({"close": 100 * np.exp(0.001 * np.arange(200))}, index=pd.date_range(
+        "2024-01-01", periods=200, freq="D", tz="UTC"
+    ))}
+    with pytest.raises(ValueError, match="high.*low|trend_gate_source"):
+        run_backtest(price_data, BacktestConfig(trend_gate_source="adx"))
+
+
+def test_trend_gate_source_invalid_value_raises():
+    price_data = _small_multi_asset_universe()
+    with pytest.raises(ValueError, match="trend_gate_source"):
+        run_backtest(price_data, BacktestConfig(trend_gate_source="not_a_real_source"))
+
+
 def test_top_n_limits_simultaneous_positions():
     # top_n=1 doit forcer une rotation : jamais plus d'un actif detenu a la fois.
     price_data = _small_multi_asset_universe()
