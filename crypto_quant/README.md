@@ -72,6 +72,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 15 - ADX comme filtre de tendance alternatif au Hurst (`trend_gate_source`) - bat nettement le Hurst en walk-forward sur BTC/ETH (Sharpe OOS 0.77 vs jamais choisi, p=0.33) - la piste la plus solide de la session en walk-forward a 2 configs
 - [x] Etape 16 - Moteur a trades discrets (`discrete_trading.py` : stop ATR, breakeven, trailing, filtre de session) en parallele du backtester a poids continus - Sharpe train 1.74/p=0.013 mais Sharpe test 0.59/p=0.51 sur un simple split 60/40 (pas encore de walk-forward complet) ; le drawdown (~-6%) reste remarquablement stable entre train et test, contrairement au Sharpe
 - [x] Etape 17 - Test hors crypto : l'or (25 ans, yfinance, `GC=F`) - avec les memes reglages qu'en crypto (jamais recalibres), le resultat OOS est quasi NUL (Sharpe 0.006, p=0.98/0.70), pas negatif - contredit l'hypothese initiale ("l'or, marche classique du suivi de tendance, devrait mieux marcher") a reglages inchanges
+- [x] Etape 17 bis - Or recalibre aux fenetres CTA classiques (100-250 jours, pas 12-48 jours) - le resultat OOS passe de bruit pur (Sharpe 0.006, p=0.98) a directionnellement positif (Sharpe 0.30, p=0.24-0.30) : la mauvaise calibration etait bien le probleme, pas l'or en tant que tel - toujours pas significatif a 5%
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -685,6 +686,50 @@ premiere incursion hors crypto du projet, pipeline etendu avec succes
 actuels. Le volume de donnees (25 ans, 10 folds) donne neanmoins beaucoup
 plus confiance dans le "0.006 = bruit" que dans n'importe quel resultat
 crypto de la session (4 ans, 6 folds).
+
+## Etape 17 bis - Or recalibre aux fenetres CTA classiques
+
+**Contexte** : suite immediate de l'etape 17 - au lieu de conclure que
+l'or ne marche pas, on recalibre aux fenetres REELLEMENT utilisees par le
+suivi de tendance classique (mois a annee, cf. Baltas & Kosowski - etape
+10 - dont la meilleure config futures utilisait un lookback de 12 mois),
+plutot que de reutiliser telles quelles les fenetres crypto (12-48 jours).
+
+**Grille testee** : 4 paires EMA (20/60, 40/120, 60/180, 100/250 jours) x
+Hurst/ADX = 8 configs, `hurst_window`/`ou_window` alignes sur `ema_slow`
+(coherence d'echelle entre les signaux). Walk-forward 10 folds, mêmes 25
+ans de futures or que l'etape 17.
+
+**Resultats** :
+
+| Test | Sharpe | p (gaussien) | p (permutation) | CAGR |
+|---|---|---|---|---|
+| Plein historique, EMA(12,48) ADX (etape 17, non recalibre) | 0.070 | - | - | +0.2% |
+| Plein historique, EMA(100,250) ADX (recalibre) | **0.402** | - | - | +3.8% |
+| Walk-forward (etape 17, non recalibre), OOS | 0.006 | 0.978 | 0.698 | -0.4% |
+| **Walk-forward (grille recalibree), OOS** | **0.299** | **0.243** | **0.295** | **+2.6%** |
+
+**Nette amelioration.** Le Sharpe OOS passe de quasi-zero (bruit pur) a
+directionnellement positif. ADX(100,250) est choisi dans 6 des 10 folds
+(le plus souvent, avec le Sharpe train le plus eleve dans la premiere
+moitie de l'historique) - la config a l'echelle "CTA classique" (~1 an de
+lookback) domine largement les fenetres courtes de type crypto. Ceci
+confirme que le resultat quasi-nul de l'etape 17 etait bien un probleme
+de MAUVAISE CALIBRATION (fenetres crypto reutilisees telles quelles), pas
+une absence d'edge sur l'or en tant que tel.
+
+**Toujours pas significatif a 5%** (p=0.24-0.30), mais c'est le
+**deuxieme meilleur resultat OOS de toute la session**, juste derriere
+l'ADX sur BTC/ETH (etape 15, Sharpe 0.77, p=0.33) - et sur un echantillon
+bien plus long et donc plus digne de confiance (25 ans / 10 folds contre
+4 ans / 6 folds). Les deux resultats (BTC/ETH courte echelle, or longue
+echelle) restent du meme ordre de grandeur : directionnellement
+interessant, jamais prouve.
+
+**Verdict** : la recalibration etait la bonne piste - a retenir pour
+toute extension future a un nouvel actif/marche : ne jamais reutiliser
+des fenetres calibrees pour un autre marche sans les reajuster a son
+horizon de temps naturel.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
