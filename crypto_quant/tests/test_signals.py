@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from crypto_quant.signals import (
+    baz_response,
     ema_trend_signal,
     estimate_dominant_half_life,
     ewma_volatility,
@@ -98,6 +99,30 @@ def test_ema_trend_signal_skip_extends_warmup_nans():
     skip = 10
     signal = ema_trend_signal(df["close"], fast=5, slow=20, vol_window=20, skip=skip)
     assert signal.iloc[:skip].isna().all(), "Les skip premieres valeurs doivent rester NaN (close.shift(skip))"
+
+
+def test_baz_response_bounded_and_sign_preserving():
+    z = pd.Series(np.linspace(-20, 20, 4001))
+    u = baz_response(z)
+
+    assert (u.abs() <= 1.0 + 1e-9).all(), "u(z) doit toujours rester dans [-1, 1]"
+    assert np.isclose(u.iloc[len(z) // 2], 0.0, atol=1e-9), "u(0) doit valoir 0"
+    assert (np.sign(u[z != 0]) == np.sign(z[z != 0])).all(), "u(z) doit garder le signe de z"
+
+
+def test_baz_response_peaks_at_sqrt2_then_decays():
+    # Baz et al. (2015) : PAS une saturation classique - u(z) atteint son
+    # maximum global en z=sqrt(2) puis DECROIT vers 0 pour |z| plus grand
+    # (un z-score extreme est traite comme moins fiable, pas plus fort).
+    sqrt2 = np.sqrt(2)
+    u_at_peak = baz_response(pd.Series([sqrt2])).iloc[0]
+    u_beyond_peak = baz_response(pd.Series([5.0])).iloc[0]
+    u_far_beyond = baz_response(pd.Series([20.0])).iloc[0]
+
+    assert np.isclose(u_at_peak, 1.0, atol=1e-6), "Le maximum global doit valoir exactement 1 en z=sqrt(2)"
+    assert u_beyond_peak < u_at_peak, "u doit decroitre apres le pic en sqrt(2)"
+    assert u_far_beyond < u_beyond_peak, "u doit continuer a decroitre vers 0 pour z tres grand"
+    assert u_far_beyond > 0, "u ne doit jamais devenir negatif pour z positif"
 
 
 def test_ou_signal_detects_positive_theta_and_correct_direction():

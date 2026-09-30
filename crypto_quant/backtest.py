@@ -23,7 +23,7 @@ import pandas as pd
 from .metrics import sharpe_ratio
 from .portfolio import build_universe_scores, target_weights_row
 from .risk import DrawdownCircuitBreaker, inverse_vol_weights, volatility_target_leverage
-from .signals import ema_trend_signal, ewma_volatility, ou_meanreversion_signal, rolling_hurst
+from .signals import baz_response, ema_trend_signal, ewma_volatility, ou_meanreversion_signal, rolling_hurst
 
 
 @dataclass
@@ -33,6 +33,7 @@ class BacktestConfig:
     ema_slow: int = 48
     ema_vol_window: int = 48
     ema_skip: int = 0  # bougies recentes exclues de l'EMA (cf. "12-1 mois" academique, signals.ema_trend_signal)
+    ema_bounded_response: bool = False  # applique signals.baz_response a ema_trend (Baz et al. 2015 / Rohrbach et al. 2017)
     hurst_window: int = 100
     hurst_min_lag: int = 2
     hurst_max_lag: int = 20
@@ -70,6 +71,8 @@ def compute_symbol_signals(df: pd.DataFrame, cfg: BacktestConfig) -> pd.DataFram
     ema_trend = ema_trend_signal(
         df["close"], fast=cfg.ema_fast, slow=cfg.ema_slow, vol_window=cfg.ema_vol_window, skip=cfg.ema_skip
     )
+    if cfg.ema_bounded_response:
+        ema_trend = baz_response(ema_trend).rename("ema_trend")
     ou_signal = ou_meanreversion_signal(df["close"], window=cfg.ou_window, significance_t=cfg.ou_significance_t)["signal"]
     ewma_vol = ewma_volatility(df["close"], lam=cfg.ewma_lambda)
 

@@ -88,6 +88,33 @@ def ema_trend_signal(
     return signal.rename("ema_trend")
 
 
+def baz_response(z: pd.Series) -> pd.Series:
+    """Fonction de reponse bornee de Baz et al. (2015), utilisee en production
+    chez Man AHL et reprise par Rohrbach, Suremann & Osterrieder (2017) pour
+    des signaux de tendance FX/crypto :
+
+        u(z) = z * exp(-z^2/4) / (sqrt(2) * exp(-1/2))
+
+    Le denominateur est choisi pour que u atteigne exactement +-1 en
+    z = +-sqrt(2) (maximum/minimum global de la fonction - derivee nulle en
+    z^2=2), pas une simple borne asymptotique.
+
+    Important : ce n'est PAS une fonction de saturation classique (type
+    sigmoide, qui plafonnerait a +-1 pour |z| grand). u(z) -> 0 quand
+    |z| -> infini : un z-score tres extreme produit un signal PLUS FAIBLE
+    qu'un z-score modere autour de sqrt(2). C'est intentionnel (Baz et al.,
+    2015) - un z-score extreme vient souvent d'un denominateur de
+    normalisation (vol) anormalement bas plutot que d'une tendance
+    genuinement plus forte, donc la fonction reduit la confiance accordee
+    aux lectures extremes au lieu de les amplifier lineairement.
+
+    A appliquer sur un signal deja normalise (ex: ema_trend_signal, dont la
+    normalisation par ewma_vol produit deja un z-score approximatif) plutot
+    que sur un prix brut.
+    """
+    return z * np.exp(-z.pow(2) / 4) / (np.sqrt(2) * np.exp(-0.5))
+
+
 def _ar1_regression(x_prev: np.ndarray, x_curr: np.ndarray) -> tuple:
     """Regression OLS X_t = a + b*X_{t-1} + eps. Renvoie (a, b, residual_std, se_b).
 

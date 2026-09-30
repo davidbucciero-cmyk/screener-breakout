@@ -129,6 +129,19 @@ def test_ema_skip_changes_signal_and_weights():
     )
 
 
+def test_ema_bounded_response_changes_signal_and_weights():
+    # Verifie le cablage de BacktestConfig.ema_bounded_response ->
+    # signals.baz_response : active, il doit changer la trajectoire de
+    # poids (sauf coincidence), puisqu'il deforme le signal de tendance.
+    price_data = _small_multi_asset_universe()
+    result_linear = run_backtest(price_data, BacktestConfig(ema_bounded_response=False))
+    result_bounded = run_backtest(price_data, BacktestConfig(ema_bounded_response=True))
+
+    assert not result_linear.weights_history.equals(result_bounded.weights_history), (
+        "ema_bounded_response doit modifier le signal de tendance et donc la trajectoire de poids"
+    )
+
+
 def test_top_n_limits_simultaneous_positions():
     # top_n=1 doit forcer une rotation : jamais plus d'un actif detenu a la fois.
     price_data = _small_multi_asset_universe()
