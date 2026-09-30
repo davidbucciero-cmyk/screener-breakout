@@ -11,7 +11,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pytest
 
-from crypto_quant.execution import LiveExecutionError, LiveExecutor, Order, load_breaker_state, save_breaker_state
+from crypto_quant.execution import (
+    LiveExecutionError,
+    LiveExecutor,
+    Order,
+    load_breaker_state,
+    load_dry_run_state,
+    save_breaker_state,
+    save_dry_run_state,
+)
 from crypto_quant.risk import DrawdownCircuitBreaker
 
 
@@ -167,6 +175,31 @@ def test_load_breaker_state_returns_default_when_file_missing(tmp_path):
     default = DrawdownCircuitBreaker(halt_drawdown=0.15)
     restored = load_breaker_state(str(tmp_path / "does_not_exist.json"), default=default)
     assert restored is default
+
+
+def test_dry_run_state_roundtrip(tmp_path):
+    executor = LiveExecutor(exchange_client=object(), initial_dry_run_cash=5_000.0)
+    orders = executor.compute_rebalance_orders(
+        current_holdings={}, target_weights={"GOLD": 1.0}, prices={"GOLD": 2000.0}, total_equity=5_000.0
+    )
+    executor.execute_orders(orders, prices={"GOLD": 2000.0})
+    assert executor.dry_run_holdings.get("GOLD", 0.0) > 0
+
+    path = str(tmp_path / "dry_run_state.json")
+    save_dry_run_state(executor, path)
+
+    restored = LiveExecutor(exchange_client=object())
+    load_dry_run_state(restored, path)
+    assert restored.dry_run_cash == executor.dry_run_cash
+    assert restored.dry_run_holdings == executor.dry_run_holdings
+    assert restored.dry_run_log == executor.dry_run_log
+
+
+def test_load_dry_run_state_is_noop_when_file_missing(tmp_path):
+    executor = LiveExecutor(exchange_client=object(), initial_dry_run_cash=1_234.0)
+    load_dry_run_state(executor, str(tmp_path / "does_not_exist.json"))
+    assert executor.dry_run_cash == 1_234.0
+    assert executor.dry_run_holdings == {}
 
 
 if __name__ == "__main__":

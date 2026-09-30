@@ -87,6 +87,22 @@ class LiveExecutor:
         self.dry_run_holdings: Dict[str, float] = {}
         self.dry_run_cash = initial_dry_run_cash
 
+    def dry_run_state_dict(self) -> dict:
+        """Serialise l'etat du paper trading (cash, positions, journal des
+        ordres) - pour persister entre deux executions d'un processus
+        relance periodiquement (cf. save_dry_run_state/load_dry_run_state,
+        meme besoin que DrawdownCircuitBreaker.to_dict/from_dict)."""
+        return {
+            "dry_run_cash": self.dry_run_cash,
+            "dry_run_holdings": self.dry_run_holdings,
+            "dry_run_log": self.dry_run_log,
+        }
+
+    def load_dry_run_state(self, state: dict) -> None:
+        self.dry_run_cash = state["dry_run_cash"]
+        self.dry_run_holdings = state["dry_run_holdings"]
+        self.dry_run_log = state["dry_run_log"]
+
     def _require_live_confirmation(self) -> None:
         confirmation = os.environ.get(self.LIVE_CONFIRMATION_ENV_VAR)
         if confirmation != self.LIVE_CONFIRMATION_VALUE:
@@ -174,3 +190,20 @@ def load_breaker_state(path: str, default: DrawdownCircuitBreaker) -> DrawdownCi
     with open(path) as f:
         state = json.load(f)
     return DrawdownCircuitBreaker.from_dict(state)
+
+
+def save_dry_run_state(executor: LiveExecutor, path: str) -> None:
+    with open(path, "w") as f:
+        json.dump(executor.dry_run_state_dict(), f, indent=2)
+
+
+def load_dry_run_state(executor: LiveExecutor, path: str) -> None:
+    """Charge l'etat de paper trading dans `executor` depuis un fichier s'il
+    existe (mutation en place, meme convention que load_breaker_state) -
+    sinon ne fait rien (premiere execution : l'executor garde son etat
+    initial, cash=initial_dry_run_cash, aucune position)."""
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        state = json.load(f)
+    executor.load_dry_run_state(state)
