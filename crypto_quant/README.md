@@ -71,6 +71,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 14 - Test sur un univers elargi (11 actifs Binance.US, 2019-2023) - `top_n` et l'overlay BTC, qui semblaient utiles sur BTC/ETH seuls, deviennent NETTEMENT NEGATIFS en walk-forward OOS (Sharpe -0.78 a -1.33) sur cet univers plus large
 - [x] Etape 15 - ADX comme filtre de tendance alternatif au Hurst (`trend_gate_source`) - bat nettement le Hurst en walk-forward sur BTC/ETH (Sharpe OOS 0.77 vs jamais choisi, p=0.33) - la piste la plus solide de la session en walk-forward a 2 configs
 - [x] Etape 16 - Moteur a trades discrets (`discrete_trading.py` : stop ATR, breakeven, trailing, filtre de session) en parallele du backtester a poids continus - Sharpe train 1.74/p=0.013 mais Sharpe test 0.59/p=0.51 sur un simple split 60/40 (pas encore de walk-forward complet) ; le drawdown (~-6%) reste remarquablement stable entre train et test, contrairement au Sharpe
+- [x] Etape 17 - Test hors crypto : l'or (25 ans, yfinance, `GC=F`) - avec les memes reglages qu'en crypto (jamais recalibres), le resultat OOS est quasi NUL (Sharpe 0.006, p=0.98/0.70), pas negatif - contredit l'hypothese initiale ("l'or, marche classique du suivi de tendance, devrait mieux marcher") a reglages inchanges
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -624,6 +625,66 @@ independamment de toute question de significativite statistique du
 rendement. Pas encore de walk-forward complet (grille de configs +
 selection sur train uniquement) pour ce moteur - a construire si cette
 piste doit etre creusee plus avant.
+
+## Etape 17 - Test hors crypto : l'or (25 ans de futures)
+
+**Contexte** : question posee apres l'etape 14 (l'univers elargi
+altcoins a nettement echoue) - "sur quel actif ca fonctionnerait mieux ?".
+Hypothese initiale : le suivi de tendance est une strategie beaucoup plus
+documentee sur les marches traditionnels (CTA/managed futures) que sur
+la crypto, et l'or est le terrain de jeu classique de ces strategies
+depuis des decennies (cf. Baltas & Kosowski, lu a l'etape 10, qui trouve
+un momentum time-series robuste sur plusieurs decennies de futures sans
+contrainte de capacite).
+
+**Donnees** : futures or (`GC=F`, yfinance), 2000-08-30 a 2026-09-30, soit
+~25 ans et 6546 bougies journalieres - bien plus long que les ~4 ans de
+crypto propre disponibles (etapes 13 bis/14/15/16). Marche traditionnel
+(pas 24/7) : necessite le nouveau `BacktestConfig.calendar_gap_multiple`
+(etape 17) pour ne pas confondre les week-ends/jours feries (jusqu'a 5
+jours) avec un vrai trou de donnees.
+
+**Important : reglages INCHANGES**, ceux calibres pour la crypto
+journaliere tout au long de la session (`ema_fast=12`, `ema_slow=48`,
+`hurst_window=100`, `ou_window=100`, etc.) - aucun recalibrage specifique
+a l'or n'a ete tente. Seul `target_vol` est adapte a la vol plus faible de
+l'or (0.01 par periode, cohere avec `periods_per_year=252` - jours
+ouvres, pas 365).
+
+**Resultats (walk-forward, 10 folds sur 25 ans - bien plus de folds
+independants que tout ce qu'on a pu faire en crypto)** :
+
+| Test | Sharpe | p (gaussien) | p (permutation) | CAGR |
+|---|---|---|---|---|
+| Plein historique, Hurst | -0.295 | - | - | -2.3% |
+| Plein historique, ADX | 0.070 | - | - | +0.2% |
+| Walk-forward (Hurst vs ADX), OOS | **0.006** | **0.978** | **0.698** | -0.4% |
+
+ADX choisi dans 8 des 10 folds (Hurst dans les 2 premiers seulement).
+
+**Le resultat OOS est quasi exactement NUL** - pas negatif comme sur
+l'univers elargi altcoins (etape 14), juste indiscernable du bruit pur
+(p=0.98, le plus proche de 1.0 vu cette session). Contrairement a
+l'hypothese initiale, l'or ne se montre pas plus favorable que la crypto
+a ces reglages - au contraire, moins prometteur que le meilleur resultat
+crypto (ADX sur BTC/ETH, etape 15, Sharpe OOS 0.77).
+
+**A ne PAS conclure de ce test** : que le suivi de tendance ne marche
+jamais sur l'or - la litterature CTA existe reellement, mais typiquement
+avec des fenetres beaucoup plus longues (souvent plusieurs mois) et des
+regles differentes (breakouts, pas un croisement EMA 12/48 jours) que ce
+qui a ete calibre ici pour la crypto. Ce test montre seulement que nos
+reglages ACTUELS ne se transposent pas tels quels a l'or - un recalibrage
+specifique (walk-forward sur l'or, pas juste reutiliser les reglages
+crypto) serait necessaire avant de tirer une vraie conclusion sur le
+potentiel de l'or pour cette approche.
+
+**Verdict** : question ouverte par l'utilisateur honnetement traitee -
+premiere incursion hors crypto du projet, pipeline etendu avec succes
+(`calendar_gap_multiple`), mais aucun edge trouve avec les reglages
+actuels. Le volume de donnees (25 ans, 10 folds) donne neanmoins beaucoup
+plus confiance dans le "0.006 = bruit" que dans n'importe quel resultat
+crypto de la session (4 ans, 6 folds).
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
