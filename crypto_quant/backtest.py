@@ -71,6 +71,14 @@ class BacktestConfig:
     initial_capital: float = 10_000.0
     rebalance_threshold: float = 0.0  # zone morte : ne rebalance que si |w_cible - w_detenu| (L1) depasse ce seuil
 
+    # Detection de trou de calendrier (etape 13 bis) : multiple du pas typique
+    # au-dela duquel un ecart est considere comme un vrai trou de donnees.
+    # 3.0 (defaut) convient a la crypto (24/7, un trou = un vrai probleme).
+    # Les marches traditionnels ont des week-ends/jours feries (jusqu'a ~5
+    # jours pour un long week-end) : augmenter (ex: 6.0) pour eviter de
+    # confondre un week-end normal avec un vrai trou de donnees.
+    calendar_gap_multiple: float = 3.0
+
     # Overlay de regime de marche (Starkiller Capital, 2023) : cash integral
     # pour TOUT le portefeuille quand market_regime_symbol est en tendance
     # baissiere, independamment des signaux par actif. Desactive si None.
@@ -199,7 +207,7 @@ def _align_universe(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) ->
     raw_common_index = None
     for df in price_data.values():
         raw_common_index = df.index if raw_common_index is None else raw_common_index.intersection(df.index)
-    _assert_no_calendar_gaps(raw_common_index.sort_values())
+    _assert_no_calendar_gaps(raw_common_index.sort_values(), max_gap_multiple=cfg.calendar_gap_multiple)
 
     required_cols = ["close", "hurst", "ema_trend", "ewma_vol"]
     per_symbol = {symbol: compute_symbol_signals(df, cfg) for symbol, df in price_data.items()}

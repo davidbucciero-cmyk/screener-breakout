@@ -49,6 +49,26 @@ def test_run_backtest_raises_on_calendar_gap():
         run_backtest(price_data, BacktestConfig())
 
 
+def test_calendar_gap_multiple_allows_market_holidays():
+    # Marche traditionnel (pas crypto 24/7, ex: or/forex/indices) : un jour
+    # ferie cree un trou de 4 jours (ex: vendredi -> mardi) - normal, pas un
+    # trou de donnees. Le defaut (3.0, calibre pour la crypto 24/7 ou tout
+    # trou est suspect) le rejette a tort ; un multiple plus genereux (6.0,
+    # cf. docstring de BacktestConfig.calendar_gap_multiple) l'accepte.
+    before = pd.bdate_range("2024-01-01", periods=150)
+    after = pd.bdate_range(before[-1] + pd.Timedelta(days=4), periods=150)
+    dates = before.append(after)
+    close = 100 * np.exp(0.0005 * np.arange(len(dates)))
+    price_data = {"GOLD": pd.DataFrame({"close": close}, index=dates)}
+    cfg_kwargs = dict(ema_fast=5, ema_slow=20, hurst_window=20, hurst_max_lag=8, ou_window=20)
+
+    with pytest.raises(ValueError, match="Trou de calendrier"):
+        run_backtest(price_data, BacktestConfig(**cfg_kwargs))
+
+    result = run_backtest(price_data, BacktestConfig(calendar_gap_multiple=6.0, **cfg_kwargs))
+    assert len(result.equity) > 0
+
+
 def test_largest_contiguous_segment_fixes_calendar_gap_before_backtest():
     price_data = _universe_with_suspension_gap()
     cleaned = largest_contiguous_segment(price_data)
