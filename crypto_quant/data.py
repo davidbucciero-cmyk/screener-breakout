@@ -112,7 +112,10 @@ def largest_contiguous_segment(
     ecarts, robuste aux quelques irregularites mineures qui ne signalent pas
     un vrai probleme).
 
-    Renvoie price_data inchange (aucun segment) si aucun trou n'est detecte.
+    Renvoie toujours les actifs alignes sur un index COMMUN (intersection),
+    meme quand aucun trou n'est detecte - ne pas le faire renverrait les
+    DataFrames bruts non alignes (chaque actif gardant sa propre plage de
+    dates), pas juste "la meme chose sans trou".
     """
     common_index = None
     for df in price_data.values():
@@ -120,7 +123,7 @@ def largest_contiguous_segment(
     common_index = common_index.sort_values()
 
     if len(common_index) < 3:
-        return price_data
+        return {symbol: df.loc[common_index] for symbol, df in price_data.items()}
 
     gaps = common_index[1:] - common_index[:-1]
     modal_step = pd.Series(gaps).mode().iloc[0]
@@ -128,7 +131,7 @@ def largest_contiguous_segment(
 
     break_positions = [i + 1 for i, g in enumerate(gaps) if g > gap_threshold]
     if not break_positions:
-        return price_data
+        return {symbol: df.loc[common_index] for symbol, df in price_data.items()}
 
     boundaries = [0] + break_positions + [len(common_index)]
     segments = [common_index[boundaries[i] : boundaries[i + 1]] for i in range(len(boundaries) - 1)]

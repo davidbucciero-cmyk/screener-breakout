@@ -292,6 +292,29 @@ def test_largest_contiguous_segment_returns_unchanged_when_no_gap():
     assert len(result["ETH/USD"]) == 100
 
 
+def test_largest_contiguous_segment_aligns_different_ranges_without_internal_gap():
+    # Cas reel rencontre en pratique (univers elargi, README etape 13 bis) :
+    # certains actifs (ex: DASH/NEO/ZRX/BAT, delistes de Binance.US en juin
+    # 2023) s'arretent plus tot que d'autres (BTC/ETH, qui continuent) sans
+    # qu'il y ait de TROU partage - l'intersection commune est deja continue,
+    # juste plus courte que la plage individuelle de chaque actif. Meme sans
+    # trou a corriger, la fonction doit renvoyer des actifs ALIGNES sur cette
+    # intersection, pas les DataFrames bruts avec leurs plages divergentes.
+    long_asset_dates = pd.date_range("2019-09-17", "2026-09-30", freq="D", tz="UTC")
+    short_asset_dates = pd.date_range("2019-11-01", "2023-06-27", freq="D", tz="UTC")
+    price_data = {
+        "BTC/USD": _daily_frame(long_asset_dates),
+        "DASH/USD": _daily_frame(short_asset_dates),
+    }
+
+    result = largest_contiguous_segment(price_data)
+
+    assert list(result["BTC/USD"].index) == list(result["DASH/USD"].index)
+    assert result["BTC/USD"].index[0] == short_asset_dates[0]
+    assert result["BTC/USD"].index[-1] == short_asset_dates[-1]
+    assert len(result["BTC/USD"]) == len(short_asset_dates)
+
+
 def test_largest_contiguous_segment_drops_suspended_trading_gap():
     # Reproduit le cas reel (README, etape 13 bis) : suspension du trading
     # USD sur Binance.US, juillet 2023 a fevrier 2025 - un trou de plusieurs
