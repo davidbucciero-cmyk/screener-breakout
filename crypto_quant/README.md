@@ -63,7 +63,8 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 8 - Tests de significativite statistique + demi-vie adaptative (inspire de Chan, "Algorithmic Trading") - `metrics.py`, `signals.py`
 - [x] Etape 9 - Backtest sur 7 ans de donnees reelles (Binance.US) - voir Etape 9 bis pour le verdict corrige
 - [x] Etape 9 bis - Le resultat negatif etait un artefact de turnover (1h), pas un edge negatif reel - confirme "pas d'edge" en 1d
-- [x] Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente (`ema_skip`) + activation de `top_n` - aucun des deux ne change le verdict OOS sur l'univers BTC/ETH
+- [x] Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente (`ema_skip`) + activation de `top_n` - aucun des deux ne change le verdict OOS sur l'univers BTC/ETH ; `ema_skip` seul en walk-forward isole ameliore nettement le Sharpe OOS (0.53, toujours pas significatif, p=0.36)
+- [x] Etape 11 - Fonction de reponse bornee de Baz et al. (2015) sur le signal EMA (`ema_bounded_response`) - neutre sur cet univers, jamais choisie sur train face au signal lineaire
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -193,6 +194,55 @@ tout ce qui a ete teste jusqu'ici sur cet univers. A ce stade, c'est la
 piste la plus prometteuse trouvee sur BTC/ETH, mais "plus prometteuse" ne
 veut pas dire "prouvee" - un edge reel donnerait un p-value net sous 0.05,
 pas 0.36.
+
+## Etape 11 - Fonction de reponse bornee de Baz et al. (2015)
+
+**Contexte** : lecture de Rohrbach, Suremann & Osterrieder (2017, SSRN),
+qui reprennent la methode de production de Baz et al. (2015, Man AHL) pour
+les signaux de tendance FX/crypto. Au lieu d'utiliser le z-score de tendance
+lineairement (ce que fait `ema_trend_signal`), ils appliquent une fonction
+de reponse bornee :
+
+    u(z) = z * exp(-z^2/4) / (sqrt(2) * exp(-1/2))
+
+Particularite importante (pas une saturation classique type sigmoide) :
+`u` atteint son maximum global exactement en `z=sqrt(2)` puis DECROIT vers
+0 pour `|z|` plus grand - un z-score extreme est traite comme moins fiable
+(souvent un artefact de volatilite anormalement basse au denominateur de
+la normalisation) plutot que comme un signal plus fort.
+
+**Implemente** : `signals.baz_response(z)`, cable via
+`BacktestConfig.ema_bounded_response` (applique a `ema_trend` si `True`).
+
+**Teste sur le meme cache Binance.US (daily, BTC/USD + ETH/USD, 2019-2026)** :
+
+| Test | Sharpe | p-value | CAGR |
+|---|---|---|---|
+| Plein historique, lineaire (defaut) | 0.392 | - | 7.9% |
+| Plein historique, reponse bornee | 0.392 | - | 7.8% |
+| Walk-forward isole (lineaire vs borne, rien d'autre ne varie) | 0.392 | 0.496 | 8.0% |
+| Walk-forward combine (`ema_skip` x reponse bornee, 4 configs) | 0.539 | 0.350 | 15.1% |
+
+**Verdict : effet neutre sur cet univers.** En walk-forward isole (seule
+variable = reponse bornee, tout le reste identique), le selecteur choisit
+`ema_bounded_response=False` (lineaire) dans les 6/6 folds - la reponse
+bornee n'apporte jamais d'avantage mesurable sur le train. En-sample, les
+deux versions sont quasi identiques (Sharpe 0.392 vs 0.392) : avec les
+fenetres EMA actuelles (`12/48`) et la normalisation par `ewma_vol`, les
+z-scores du signal de tendance semblent rarement assez extremes pour que
+la decroissance au-dela de `z=sqrt(2)` change grand-chose. Le resultat
+"combine" (0.539, p=0.350) n'est pas meilleur que `ema_skip=3` seul
+(0.530, p=0.358, etape 10) aux erreurs d'estimation pres - la reponse
+bornee ne semble rien ajouter au-dela de ce que `ema_skip` apportait deja.
+
+A noter : le papier original combine 3 horizons EMA differents avant
+d'appliquer la fonction de reponse (moyenne ponderee de 3 signaux a
+correlation ~85% entre eux), alors qu'ici elle est appliquee a un seul
+horizon (`ema_fast`/`ema_slow`). Il est possible que l'effet de la
+fonction de reponse ne se manifeste vraiment qu'en presence de plusieurs
+horizons combines (elle sert alors aussi a eviter qu'un horizon bruite
+ne domine le melange) - hors-scope pour l'instant, mais note pour une
+suite eventuelle.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
