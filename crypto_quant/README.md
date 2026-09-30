@@ -65,6 +65,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 9 bis - Le resultat negatif etait un artefact de turnover (1h), pas un edge negatif reel - confirme "pas d'edge" en 1d
 - [x] Etape 10 - Lien theorie/code (momentum academique) : skip de periode recente (`ema_skip`) + activation de `top_n` - aucun des deux ne change le verdict OOS sur l'univers BTC/ETH ; `ema_skip` seul en walk-forward isole ameliore nettement le Sharpe OOS (0.53, toujours pas significatif, p=0.36)
 - [x] Etape 11 - Fonction de reponse bornee de Baz et al. (2015) sur le signal EMA (`ema_bounded_response`) - neutre sur cet univers, jamais choisie sur train face au signal lineaire
+- [x] Etape 12 - Signal de tendance multi-horizon (3 paires EMA, `ema_multi_horizon`) - nettement PIRE que le signal a un seul horizon sur cet univers, jamais choisi sur train
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -243,6 +244,59 @@ fonction de reponse ne se manifeste vraiment qu'en presence de plusieurs
 horizons combines (elle sert alors aussi a eviter qu'un horizon bruite
 ne domine le melange) - hors-scope pour l'instant, mais note pour une
 suite eventuelle.
+
+## Etape 12 - Signal de tendance multi-horizon (3 paires EMA, Baz et al. 2015)
+
+**Contexte** : suite a l'etape 11, hypothese que l'effet de la fonction de
+reponse bornee ne se manifeste qu'en combinant plusieurs horizons EMA
+(comme dans la methode complete de Baz et al. 2015 / Rohrbach et al. 2017),
+pas sur un seul horizon. Implementation fidele cette fois : 3 paires EMA
+(8,24)/(16,48)/(32,96), chacune normalisee en cascade (vol du PRIX sur une
+fenetre fixe de 63 jours, PUIS vol du SIGNAL lui-meme sur sa propre
+fenetre glissante de 252 jours), moyennees a poids egaux - voir
+`signals.multi_horizon_trend_signal`.
+
+**Teste sur le meme cache Binance.US (daily, BTC/USD + ETH/USD, 2019-2026)** :
+
+| Test | Sharpe | CAGR |
+|---|---|---|
+| Plein historique, signal simple (`ema_fast=12/ema_slow=48`) | 0.392 | +7.9% |
+| Plein historique, multi-horizon | **0.096** | **-4.7%** |
+| Plein historique, multi-horizon + reponse bornee | 0.267 | +2.5% |
+| Walk-forward isole (simple vs multi, rien d'autre ne varie) - OOS | 0.392 | +8.0% |
+
+**Verdict : nettement PIRE que le signal a un seul horizon sur cet
+univers**, pas juste neutre comme la reponse bornee seule (etape 11). En
+walk-forward isole, le selecteur choisit le signal a un seul horizon dans
+les 6/6 folds - le multi-horizon n'est jamais competitif, meme sur train.
+Dans une grille combinee (multi-horizon x reponse bornee x `ema_skip`,
+6 configs), le meilleur reste exactement la config de l'etape 10
+(signal simple + `ema_skip=3`, Sharpe OOS 0.538, coherent avec le 0.530
+deja trouve) - le multi-horizon n'apporte rien, meme combine aux autres
+ajustements.
+
+Hypotheses sur cet echec (non testees individuellement, a prendre comme
+pistes plutot que diagnostic confirme) :
+- **Cout du warm-up** : la cascade des deux normalisations consomme a elle
+  seule ~315 jours avant tout signal exploitable, soit environ 16% des
+  ~1985 jours de donnees disponibles - une fraction bien plus grande de
+  l'historique "perdue" que pour le signal simple (`ema_slow=48`).
+- **Horizons trop longs pour ce marche** : les paires (32,96) capturent des
+  tendances sur plusieurs mois. Or l'etape 10 a deja montre qu'exclure la
+  periode tres recente (`ema_skip`) aide, ce qui suggere un marche ou les
+  tendances utiles sont plutot courtes et le bruit de retournement
+  frequent - une methode calibree a l'origine sur le FX (tendances plus
+  lentes, marches plus liquides) ne se transpose pas necessairement telle
+  quelle aux cryptos.
+- **Univers trop petit** : la methode originale visait un portefeuille
+  cross-sectionnel de plusieurs dizaines de devises/cryptos ; sur 2 actifs
+  seulement, la perte de reactivite du multi-horizon n'est compensee par
+  aucune diversification supplementaire.
+
+Le code reste disponible et teste (`ema_multi_horizon`, 96/96 tests
+passent) pour d'eventuels tests futurs sur un univers plus large ou
+d'autres parametres d'horizon, mais n'est PAS recommande sur la
+configuration actuelle.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
