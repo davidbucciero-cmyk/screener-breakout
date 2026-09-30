@@ -171,6 +171,29 @@ tant que l'univers se limite a BTC/ETH - son interet academique (Foltice &
 Langer) suppose un univers bien plus large pour exploiter une vraie
 dispersion cross-sectionnelle entre actifs.
 
+**Suite : `ema_skip` teste seul en walk-forward isole** (grille ne variant
+QUE `ema_skip` ∈ {0,1,2,3,5}, tout le reste au defaut - pas melange a
+`top_n` ni a d'autres variantes ema/ou_window cette fois) :
+
+| | Reference etape 9bis (5 configs, sans ema_skip) | `ema_skip` seul (5 configs, skip uniquement) |
+|---|---|---|
+| Sharpe OOS | 0.036 | **0.530** |
+| p-value | 0.95 | **0.358** |
+| CAGR OOS | -7.9% | **+14.7%** |
+| Folds valides | 6/6 | 6/6 |
+
+Nettement meilleur que la reference, et le choix n'a pas l'air de pur bruit
+de selection : `ema_skip=3` est choisi dans 5 des 6 folds (le fold 0 choisit
+`skip=2`, tres proche) - un signal stable a travers des folds qui couvrent
+des regimes tres differents (bull 2020-21, bear 2022, range 2023-25),
+contrairement aux choix disperses de la grille etendue ci-dessus. Cela dit,
+**p=0.358 reste loin du seuil de 5%** - le resultat n'est pas encore
+statistiquement distinguable du bruit, juste beaucoup moins mauvais que
+tout ce qui a ete teste jusqu'ici sur cet univers. A ce stade, c'est la
+piste la plus prometteuse trouvee sur BTC/ETH, mais "plus prometteuse" ne
+veut pas dire "prouvee" - un edge reel donnerait un p-value net sous 0.05,
+pas 0.36.
+
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
 **Investigation** (le Sharpe de -2.43 avec p≈0 semblait suspect : un signal
