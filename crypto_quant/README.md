@@ -73,6 +73,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 16 - Moteur a trades discrets (`discrete_trading.py` : stop ATR, breakeven, trailing, filtre de session) en parallele du backtester a poids continus - Sharpe train 1.74/p=0.013 mais Sharpe test 0.59/p=0.51 sur un simple split 60/40 (pas encore de walk-forward complet) ; le drawdown (~-6%) reste remarquablement stable entre train et test, contrairement au Sharpe
 - [x] Etape 17 - Test hors crypto : l'or (25 ans, yfinance, `GC=F`) - avec les memes reglages qu'en crypto (jamais recalibres), le resultat OOS est quasi NUL (Sharpe 0.006, p=0.98/0.70), pas negatif - contredit l'hypothese initiale ("l'or, marche classique du suivi de tendance, devrait mieux marcher") a reglages inchanges
 - [x] Etape 17 bis - Or recalibre aux fenetres CTA classiques (100-250 jours, pas 12-48 jours) - le resultat OOS passe de bruit pur (Sharpe 0.006, p=0.98) a directionnellement positif (Sharpe 0.30, p=0.24-0.30) : la mauvaise calibration etait bien le probleme, pas l'or en tant que tel - toujours pas significatif a 5%
+- [x] Etape 18 - Bot de paper trading autonome sur l'or (`gold_paper_bot.py`) - execute une iteration quotidienne (config recalibree etape 17 bis), coupe-circuit inclus, PAPER TRADING UNIQUEMENT (`LiveExecutor(dry_run=True)`) ; tout l'etat (cash, positions, coupe-circuit) persiste en JSON commit/push pour survivre au conteneur ephemere
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -730,6 +731,62 @@ interessant, jamais prouve.
 toute extension future a un nouvel actif/marche : ne jamais reutiliser
 des fenetres calibrees pour un autre marche sans les reajuster a son
 horizon de temps naturel.
+
+## Etape 18 - Bot de paper trading autonome sur l'or
+
+**Contexte** : suite a la lecture de Baur, Dichtl, Drobetz & Wendt (2018,
+SSRN) qui montre qu'un edge de market timing non corrige pour le
+data-snooping multi-strategies (test SPA de Hansen) ne survit
+generalement pas - limite reconnue de notre propre methodologie
+walk-forward (etape 17 bis : Sharpe OOS 0.30, jamais significatif a 5%).
+Plutot que de continuer a chercher un edge plus solide, on pivote vers
+une infrastructure honnete : un bot qui **simule** le suivi de cette
+strategie en conditions reelles (prix du jour, coupe-circuit, ordres),
+sans y engager d'argent reel - paper trading strictement.
+
+**Choix explicites (clarifies avec l'utilisateur avant construction)** :
+- Paper trading uniquement (pas d'argent reel) - aucune des 3 barrieres
+  de securite du live reel (etape 6) n'est jamais approchee dans ce module.
+- Declenchement par une Routine planifiee de cet environnement (pas un
+  script independant sur une autre machine) - une execution par jour,
+  coherente avec le pas de temps (bougie journaliere) de toute la
+  recherche precedente.
+
+**`gold_paper_bot.py`** : `run_daily_step()` execute une iteration complete :
+
+1. Recupere le prix de l'or (`GC=F`, futures, via `yfinance` - Alpha
+   Vantage a atteint sa limite de 25 requetes/jour des le premier essai).
+2. Idempotent sur la date : si deja execute pour la derniere bougie
+   disponible, renvoie `"deja_a_jour"` sans repasser d'ordre (utile si la
+   Routine se redeclenche par erreur le meme jour).
+3. Calcule l'equity du compte paper en mark-to-market (cash + positions
+   au prix courant), fait avancer le coupe-circuit de drawdown
+   (`DrawdownCircuitBreaker`, etape 4/6) avec cette equity.
+4. Si le trading est autorise, calcule le poids cible via
+   `compute_live_weights` - **exactement** le pipeline signal -> score ->
+   poids valide en walk-forward a l'etape 17 bis (`GOLD_CONFIG` : ADX,
+   EMA 100/250, fenetres Hurst/OU 250 jours, `calendar_gap_multiple=6.0`
+   pour les week-ends/jours feries des marches traditionnels). Si le
+   coupe-circuit a declenche, poids cible force a 0.
+5. Simule l'ordre de rebalancement (`LiveExecutor(dry_run=True)`) et
+   persiste tout l'etat (cash, positions, journal d'ordres, coupe-circuit,
+   derniere date executee) en JSON dans `gold_paper_bot_state/`.
+
+**Point important sur le coupe-circuit** : il suit l'equity du COMPTE
+PAPER, pas le prix brut de l'or - tant qu'aucune position n'est ouverte,
+un krach du prix ne fait baisser l'equity de personne. Le test de
+non-regression (`test_run_daily_step_forces_flat_when_circuit_breaker_halts`)
+simule donc un scenario a 2 jours (entree en position, puis krach sur la
+position deja ouverte) plutot qu'un krach des le premier jour.
+
+**Persistance** : le conteneur cloud qui execute ce script est recree a
+chaque declenchement de la Routine - seuls les fichiers JSON commit/push
+par l'appelant survivent d'une execution a l'autre (`breaker.json`,
+`dry_run.json`, `last_run.json` dans `gold_paper_bot_state/`).
+
+**A faire pour un usage continu** : une Routine planifiee
+(`create_trigger`, quotidienne) qui invoque `run_daily_step()`, commit et
+pousse l'etat mis a jour, et rapporte le resultat.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
