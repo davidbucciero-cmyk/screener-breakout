@@ -68,6 +68,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 12 - Signal de tendance multi-horizon (3 paires EMA, `ema_multi_horizon`) - nettement PIRE que le signal a un seul horizon sur cet univers, jamais choisi sur train
 - [x] Etape 13 - Overlay de regime de marche (`market_regime_symbol`, croisement EMA BTC) - resultat INITIAL (Sharpe 0.99, p=0.086-0.106) trouve ensuite CONTAMINE par un bug de donnees, corrige et re-teste a l'etape 13 bis
 - [x] Etape 13 bis - **BUG CRITIQUE CORRIGE** : trou de calendrier non detecte (suspension Binance.US juil. 2023-fev. 2025) contaminait tous les backtests Binance.US depuis l'etape 9bis ; verdict corrige pour l'overlay BTC : Sharpe OOS 0.59, p=0.43-0.45 - toujours pas significatif, et le gain qui semblait spectaculaire s'effondre largement une fois le bug corrige
+- [x] Etape 14 - Test sur un univers elargi (11 actifs Binance.US, 2019-2023) - `top_n` et l'overlay BTC, qui semblaient utiles sur BTC/ETH seuls, deviennent NETTEMENT NEGATIFS en walk-forward OOS (Sharpe -0.78 a -1.33) sur cet univers plus large
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -446,6 +447,68 @@ ZRX, BAT n'ont plus de donnees apres cette date) confirme que c'est un
 evenement reel de l'exchange, pas un artefact de notre pipeline de fetch -
 mais notre pipeline de BACKTEST, lui, avait un vrai bug en ne le
 detectant pas.
+
+## Etape 14 - Test sur un univers elargi (11 actifs)
+
+**Contexte** : demande de tester `top_n` et l'overlay BTC sur un univers
+plus grand que BTC/ETH - ces deux mecanismes n'ont de sens que si
+l'univers offre une vraie dispersion cross-sectionnelle (cf. etape 10).
+
+**Univers construit** : parmi les paires USD de Binance.US avec un long
+historique, 11 actifs partagent une fenetre continue SANS AUCUN TROU (verifie
+bougie par bougie) : BTC, ETH, LTC, BCH, ADA, ETC, XLM, DASH, NEO, ZRX, BAT.
+XRP et ZEC ont ete exclus (gaps internes propres, suspension/relisting a
+des dates differentes du reste). La fenetre commune est 2019-11-01 ->
+2023-06-27 (1335 bougies, ~3.65 ans) - bornee par NEO (demarre le plus
+tard) et par DASH/NEO/ZRX/BAT (delistes de Binance.US en juin 2023, avant
+meme la suspension generale de juillet 2023 qui affecte BTC/ETH).
+
+**A noter sur la composition de cet univers** : 4 des 11 actifs ont ete
+delistes de Binance.US moins de 4 ans apres le debut de la fenetre - un
+signal de risque de survie qui n'est pas represente dans le backtest
+(aucun mecanisme de gestion du risque de delisting/illiquidite dans le
+pipeline actuel). Cet univers n'est pas un choix "neutre" de 11 grandes
+cryptomonnaies, c'est simplement ce qui avait un historique Binance.US
+suffisamment long et continu.
+
+**Resultats (walk-forward, le seul chiffre qui compte)** :
+
+| Test | Sharpe OOS | p-value | CAGR OOS |
+|---|---|---|---|
+| `top_n` seul (grille {None,1,2,3,5,8}) | **-0.78** | 0.34 | **-53.8%** |
+| Overlay BTC seul | **-1.20** | 0.14 | **-47.8%** |
+| Combine (`top_n` x overlay) | **-1.33** | 0.11 (gaussien) / 0.96 (permutation) | **-50.7%** |
+
+**Les deux mecanismes qui semblaient utiles sur BTC/ETH (etapes 10 et 13
+bis) deviennent NETTEMENT NEGATIFS sur cet univers elargi** - pas juste
+"pas d'edge", mais un Sharpe negatif substantiel. Signature classique de
+surapprentissage, et meme plus marquee qu'a l'etape 9bis : le Sharpe TRAIN
+reste positif et souvent superieur a 1 dans presque tous les folds (ex.
+overlay : 0.52 a 1.64) alors que l'OOS s'effondre a -0.78/-1.33 - la
+selection sur train choisit systematiquement `top_n=1` et l'overlay
+(6/6 folds a chaque fois), avec une confiance apparente forte, pour un
+resultat OOS deteriore plutot que simplement bruite.
+
+**Hypothese sur la cause** : contrairement a BTC/ETH (deux actifs matures,
+fortement correles, ou concentrer sur "le meilleur des deux" ou couper sur
+BTC a un effet limite), cet univers mele des altcoins de capitalisation
+bien plus faible (DASH, NEO, ZRX, BAT, ETC...) dont la dynamique recente
+(narratifs, pump-and-dump, risque de delisting) semble inverser le signe
+du signal entre train et test - `top_n=1` concentre sur "le meilleur
+performer du mois precedent", qui dans un univers d'altcoins volatils
+capture probablement plus le sommet d'un pump transitoire (suivi d'un
+retournement) que la persistance de tendance recherchee par le momentum.
+C'est une hypothese, pas un diagnostic confirme (contrairement a l'etape
+9bis ou la cause avait ete isolee precisement).
+
+**Verdict** : elargir l'univers n'a pas aide - au contraire, il a
+transforme un signal "pas d'edge detectable" (BTC/ETH) en un signal
+"edge negatif substantiel" en walk-forward. Ni `top_n` ni l'overlay BTC ne
+sont recommandes sur cet univers de 11 actifs tel que construit. Le
+probleme n'est pas le manque de dispersion cross-sectionnelle (cet univers
+en a, largement) mais plutot que cette dispersion vient d'actifs dont le
+comportement (et le risque de survie) est trop different de BTC/ETH pour
+que les mecanismes calibres sur ces deux-la se transposent utilement.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
