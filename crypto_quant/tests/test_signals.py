@@ -18,6 +18,7 @@ from crypto_quant.signals import (
     estimate_dominant_half_life,
     ewma_volatility,
     hurst_exponent,
+    multi_horizon_trend_signal,
     ou_meanreversion_signal,
     rolling_hurst,
     suggest_meanreversion_window,
@@ -108,6 +109,42 @@ def test_baz_response_bounded_and_sign_preserving():
     assert (u.abs() <= 1.0 + 1e-9).all(), "u(z) doit toujours rester dans [-1, 1]"
     assert np.isclose(u.iloc[len(z) // 2], 0.0, atol=1e-9), "u(0) doit valoir 0"
     assert (np.sign(u[z != 0]) == np.sign(z[z != 0])).all(), "u(z) doit garder le signe de z"
+
+
+def test_multi_horizon_trend_signal_sign_matches_injected_trend():
+    n = 500
+    up = synthetic_dataframe(n, drift=0.004, gbm_vol=0.003, ou_theta=0.0, ou_sigma=0.0, seed=9)
+    down = synthetic_dataframe(n, drift=-0.004, gbm_vol=0.003, ou_theta=0.0, ou_sigma=0.0, seed=9)
+
+    up_signal = multi_horizon_trend_signal(up["close"], price_vol_window=20, signal_vol_window=60).iloc[-1]
+    down_signal = multi_horizon_trend_signal(down["close"], price_vol_window=20, signal_vol_window=60).iloc[-1]
+
+    assert up_signal > 0, "Tendance haussiere doit donner un signal multi-horizon positif"
+    assert down_signal < 0, "Tendance baissiere doit donner un signal multi-horizon negatif"
+
+
+def test_multi_horizon_trend_signal_warmup_matches_cascade():
+    # La double normalisation en cascade (price_vol_window PUIS
+    # signal_vol_window sur son resultat) doit produire un warm-up d'environ
+    # leur somme, pas juste le plus long horizon EMA.
+    n = 400
+    price_vol_window, signal_vol_window = 20, 60
+    df = synthetic_dataframe(n, drift=0.001, gbm_vol=0.005, seed=10)
+    signal = multi_horizon_trend_signal(
+        df["close"], price_vol_window=price_vol_window, signal_vol_window=signal_vol_window
+    )
+    warmup = price_vol_window + signal_vol_window
+    assert signal.iloc[: warmup - 3].isna().all(), "Warm-up trop court : la cascade des deux normalisations doit produire des NaN"
+    assert signal.iloc[warmup:].notna().all(), "Apres le warm-up, le signal doit etre defini partout"
+
+
+def test_multi_horizon_trend_signal_bounded_response_stays_in_range():
+    n = 400
+    df = synthetic_dataframe(n, drift=0.003, gbm_vol=0.01, momentum_rho=0.5, seed=11)
+    signal = multi_horizon_trend_signal(
+        df["close"], price_vol_window=20, signal_vol_window=60, use_bounded_response=True
+    ).dropna()
+    assert (signal.abs() <= 1.0 + 1e-9).all(), "Avec use_bounded_response, la moyenne des u_k doit rester dans [-1, 1]"
 
 
 def test_baz_response_peaks_at_sqrt2_then_decays():

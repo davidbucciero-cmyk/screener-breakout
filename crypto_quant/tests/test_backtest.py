@@ -142,6 +142,22 @@ def test_ema_bounded_response_changes_signal_and_weights():
     )
 
 
+def test_ema_multi_horizon_changes_signal_and_weights():
+    # Verifie le cablage de BacktestConfig.ema_multi_horizon ->
+    # signals.multi_horizon_trend_signal : active, il doit changer la
+    # trajectoire de poids par rapport au signal EMA a un seul horizon.
+    price_data = _small_multi_asset_universe()
+    result_single = run_backtest(price_data, BacktestConfig(ema_multi_horizon=False))
+    result_multi = run_backtest(
+        price_data,
+        BacktestConfig(ema_multi_horizon=True, ema_multi_price_vol_window=20, ema_multi_signal_vol_window=60),
+    )
+
+    assert not result_single.weights_history.equals(result_multi.weights_history), (
+        "ema_multi_horizon doit modifier le signal de tendance et donc la trajectoire de poids"
+    )
+
+
 def test_top_n_limits_simultaneous_positions():
     # top_n=1 doit forcer une rotation : jamais plus d'un actif detenu a la fois.
     price_data = _small_multi_asset_universe()

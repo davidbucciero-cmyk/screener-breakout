@@ -115,6 +115,67 @@ def baz_response(z: pd.Series) -> pd.Series:
     return z * np.exp(-z.pow(2) / 4) / (np.sqrt(2) * np.exp(-0.5))
 
 
+def multi_horizon_trend_signal(
+    close: pd.Series,
+    horizons: tuple = ((8, 24), (16, 48), (32, 96)),
+    price_vol_window: int = 63,
+    signal_vol_window: int = 252,
+    use_bounded_response: bool = False,
+    skip: int = 0,
+) -> pd.Series:
+    """Signal de tendance multi-horizon (Baz et al., 2015 ; Rohrbach, Suremann
+    & Osterrieder, 2017), combinaison de plusieurs croisements d'EMA plutot
+    qu'un seul (`ema_trend_signal`).
+
+    Pour chaque paire (fast, slow) de `horizons` :
+
+        x_k = EMA(close, fast) - EMA(close, slow)
+        y_k = x_k / sdmoving(price_vol_window)(close)          (1ere normalisation : par la vol du PRIX)
+        z_k = y_k / sdmoving(signal_vol_window)(y_k)           (2eme normalisation : par la vol du SIGNAL lui-meme)
+        u_k = baz_response(z_k) si use_bounded_response, sinon z_k
+
+    Le signal final est la moyenne simple des u_k (poids egaux, comme dans
+    les deux papiers - "on peut optimiser les poids par horizon, mais le
+    risque de surapprentissage doit etre considere").
+
+    Par defaut, les 3 paires (8,24)/(16,48)/(32,96) donnent une correlation
+    croisee d'environ 85% entre horizons consecutifs (assez differents pour
+    apporter de l'information distincte, pas au point d'etre redondants -
+    cf. Rohrbach et al., section 4.3).
+
+    Double normalisation DIFFERENTE du reste du pipeline (ema_trend_signal
+    ne normalise qu'une fois, par une fenetre liee a chaque horizon) :
+    ici la 1ere normalisation utilise une fenetre FIXE (63 jours, ~3 mois)
+    identique pour tous les horizons, et la 2eme normalise chaque y_k par
+    SA PROPRE volatilite glissante (1 an) - c'est la methode exacte des
+    papiers de reference, gardee telle quelle plutot que reutilisee/adaptee
+    a partir de ema_trend_signal pour rester fidele a la source.
+
+    skip : meme semantique que ema_trend_signal.skip (EMA calculees sur
+    close.shift(skip)), la normalisation par la vol reste sur la serie
+    courante (le risque actuel, pas celui d'il y a `skip` bougies).
+
+    Les `skip` + le plus long warm-up (EMA la plus lente + les deux fenetres
+    de normalisation en cascade) produisent un NaN prolonge en debut de
+    serie - attendu, pas un bug.
+    """
+    base = close.shift(skip) if skip > 0 else close
+    price_vol = close.rolling(price_vol_window).std().replace(0, np.nan)
+
+    u_signals = []
+    for fast, slow in horizons:
+        ema_fast = base.ewm(span=fast, adjust=False).mean()
+        ema_slow = base.ewm(span=slow, adjust=False).mean()
+        x_k = ema_fast - ema_slow
+        y_k = x_k / price_vol
+        z_k = y_k / y_k.rolling(signal_vol_window).std().replace(0, np.nan)
+        u_k = baz_response(z_k) if use_bounded_response else z_k
+        u_signals.append(u_k)
+
+    combined = sum(u_signals) / len(u_signals)
+    return combined.rename("ema_trend_multi")
+
+
 def _ar1_regression(x_prev: np.ndarray, x_curr: np.ndarray) -> tuple:
     """Regression OLS X_t = a + b*X_{t-1} + eps. Renvoie (a, b, residual_std, se_b).
 

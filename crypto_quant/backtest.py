@@ -23,7 +23,14 @@ import pandas as pd
 from .metrics import sharpe_ratio
 from .portfolio import build_universe_scores, target_weights_row
 from .risk import DrawdownCircuitBreaker, inverse_vol_weights, volatility_target_leverage
-from .signals import baz_response, ema_trend_signal, ewma_volatility, ou_meanreversion_signal, rolling_hurst
+from .signals import (
+    baz_response,
+    ema_trend_signal,
+    ewma_volatility,
+    multi_horizon_trend_signal,
+    ou_meanreversion_signal,
+    rolling_hurst,
+)
 
 
 @dataclass
@@ -34,6 +41,9 @@ class BacktestConfig:
     ema_vol_window: int = 48
     ema_skip: int = 0  # bougies recentes exclues de l'EMA (cf. "12-1 mois" academique, signals.ema_trend_signal)
     ema_bounded_response: bool = False  # applique signals.baz_response a ema_trend (Baz et al. 2015 / Rohrbach et al. 2017)
+    ema_multi_horizon: bool = False  # remplace ema_trend_signal par signals.multi_horizon_trend_signal (3 paires EMA)
+    ema_multi_price_vol_window: int = 63
+    ema_multi_signal_vol_window: int = 252
     hurst_window: int = 100
     hurst_min_lag: int = 2
     hurst_max_lag: int = 20
@@ -68,11 +78,20 @@ def compute_symbol_signals(df: pd.DataFrame, cfg: BacktestConfig) -> pd.DataFram
     """Calcule les 3 signaux + la vol EWMA pour un actif. Vectorise (pas de
     dependance a l'etat du portefeuille), reutilisable tel quel hors backtest."""
     hurst = rolling_hurst(df["close"], window=cfg.hurst_window, min_lag=cfg.hurst_min_lag, max_lag=cfg.hurst_max_lag)
-    ema_trend = ema_trend_signal(
-        df["close"], fast=cfg.ema_fast, slow=cfg.ema_slow, vol_window=cfg.ema_vol_window, skip=cfg.ema_skip
-    )
-    if cfg.ema_bounded_response:
-        ema_trend = baz_response(ema_trend).rename("ema_trend")
+    if cfg.ema_multi_horizon:
+        ema_trend = multi_horizon_trend_signal(
+            df["close"],
+            price_vol_window=cfg.ema_multi_price_vol_window,
+            signal_vol_window=cfg.ema_multi_signal_vol_window,
+            use_bounded_response=cfg.ema_bounded_response,
+            skip=cfg.ema_skip,
+        ).rename("ema_trend")
+    else:
+        ema_trend = ema_trend_signal(
+            df["close"], fast=cfg.ema_fast, slow=cfg.ema_slow, vol_window=cfg.ema_vol_window, skip=cfg.ema_skip
+        )
+        if cfg.ema_bounded_response:
+            ema_trend = baz_response(ema_trend).rename("ema_trend")
     ou_signal = ou_meanreversion_signal(df["close"], window=cfg.ou_window, significance_t=cfg.ou_significance_t)["signal"]
     ewma_vol = ewma_volatility(df["close"], lam=cfg.ewma_lambda)
 
@@ -376,7 +395,17 @@ class WalkForwardValidator:
         best_sharpe = -np.inf
 
         for cfg in self.config_grid:
-            max_window = max(cfg.ema_slow, cfg.ema_vol_window, cfg.hurst_window, cfg.ou_window)
+            # Le multi-horizon enchaine deux normalisations glissantes
+            # (price_vol_window PUIS signal_vol_window sur le resultat), le
+            # warm-up reel est donc leur somme, pas juste l'horizon EMA le
+            # plus lent - sinon ce filtre laisserait passer des configs qui
+            # ne produiront en realite aucune valeur exploitable sur le fold.
+            ema_component = (
+                cfg.ema_multi_price_vol_window + cfg.ema_multi_signal_vol_window
+                if cfg.ema_multi_horizon
+                else cfg.ema_slow
+            )
+            max_window = max(ema_component, cfg.ema_vol_window, cfg.hurst_window, cfg.ou_window)
             if max_window + self.min_valid_periods > test_length:
                 continue
 
