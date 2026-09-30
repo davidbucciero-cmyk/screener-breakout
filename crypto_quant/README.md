@@ -74,6 +74,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 17 - Test hors crypto : l'or (25 ans, yfinance, `GC=F`) - avec les memes reglages qu'en crypto (jamais recalibres), le resultat OOS est quasi NUL (Sharpe 0.006, p=0.98/0.70), pas negatif - contredit l'hypothese initiale ("l'or, marche classique du suivi de tendance, devrait mieux marcher") a reglages inchanges
 - [x] Etape 17 bis - Or recalibre aux fenetres CTA classiques (100-250 jours, pas 12-48 jours) - le resultat OOS passe de bruit pur (Sharpe 0.006, p=0.98) a directionnellement positif (Sharpe 0.30, p=0.24-0.30) : la mauvaise calibration etait bien le probleme, pas l'or en tant que tel - toujours pas significatif a 5%
 - [x] Etape 18 - Bot de paper trading autonome sur l'or (`gold_paper_bot.py`) - execute une iteration quotidienne (config recalibree etape 17 bis), coupe-circuit inclus, PAPER TRADING UNIQUEMENT (`LiveExecutor(dry_run=True)`) ; tout l'etat (cash, positions, coupe-circuit) persiste en JSON commit/push pour survivre au conteneur ephemere
+- [x] Etape 19 - Systeme de breakout Donchian + filtre MM200 (`donchian_system.py`, propose par l'utilisateur) teste en walk-forward (10 folds) sur les memes 25 ans d'or - Sharpe OOS 0.25, p=0.23-0.43 : meme ordre de grandeur que l'ADX/EMA de l'etape 17 bis, pas une amelioration nette, jamais significatif a 5%
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -787,6 +788,98 @@ par l'appelant survivent d'une execution a l'autre (`breaker.json`,
 **A faire pour un usage continu** : une Routine planifiee
 (`create_trigger`, quotidienne) qui invoque `run_daily_step()`, commit et
 pousse l'etat mis a jour, et rapporte le resultat.
+
+## Etape 19 - Systeme de breakout Donchian + filtre MM200
+
+**Contexte** : propose par l'utilisateur (regles d'un systeme CTA
+classique, lignee "Turtle Trading") : achat si cloture au-dessus de la MM
+200 jours ET au-dessus du plus haut des 20 jours precedents, stop initial
+a 2xATR(20), sortie si cloture sous le plus bas des 10 jours precedents,
+risque de 0.25-0.5% du capital par position. Contrairement a deux autres
+propositions evaluees la meme session (VWAP/volume profile, scalp 1-minute
+"PTS: Golden Edge") - toutes deux ecartees faute de donnees intraday
+suffisantes - celle-ci est en bougies JOURNALIERES, donc pleinement
+compatible avec l'infra deja validee.
+
+**`donchian_system.py`** (nouveau module, en parallele de
+`discrete_trading.py` plutot que par extension - logique d'entree/sortie
+fondamentalement differente, canal de prix plutot que score composite
+Hurst/EMA/OU) :
+- Entree a l'OUVERTURE du jour SUIVANT le signal (pas a la meme cloture
+  qui vient de le generer) - plus realiste, et corrige au passage un biais
+  optimiste present dans `discrete_trading.py` (entree a la cloture du
+  jour meme, latence signal->execution nulle).
+- Sortie par CANAL (cloture sous le plus bas des N jours precedents),
+  independante du score - contrairement au moteur existant qui sort sur
+  signal<=0.
+- Long-only (coherent avec le reste du projet, spot) : la regle symetrique
+  de vente a decouvert proposee n'est PAS implementee (demanderait une
+  infra de short jamais construite ici).
+
+**Walk-forward (10 folds, memes 25 ans de futures or que l'etape 17 bis)**,
+grille de 4 configs (fenetres d'entree/MM/sortie variees autour de la
+proposition initiale), config choisie sur train uniquement a chaque fold :
+
+| Fold | Periode test | Config choisie | Sharpe train | Sharpe test |
+|---|---|---|---|---|
+| 1 | 2003-01 -> 2005-06 | rapide (10/100/5) | 0.71 | -0.14 |
+| 2 | 2005-06 -> 2007-10 | rapide (10/100/5) | 0.40 | +1.13 |
+| 3 | 2007-10 -> 2010-03 | rapide (10/100/5) | 0.75 | +0.24 |
+| 4 | 2010-03 -> 2012-07 | rapide (10/100/5) | 0.71 | +0.71 |
+| 5 | 2012-07 -> 2014-11 | rapide (10/100/5) | 0.71 | -0.67 |
+| 6 | 2014-11 -> 2017-04 | rapide (10/100/5) | 0.60 | -0.37 |
+| 7 | 2017-04 -> 2019-08 | rapide (10/100/5) | 0.51 | -0.17 |
+| 8 | 2019-08 -> 2022-01 | rapide (10/100/5) | 0.47 | -0.63 |
+| 9 | 2022-01 -> 2024-05 | rapide (10/100/5) | 0.37 | +0.57 |
+| 10 | 2024-05 -> 2026-09 | rapide (10/100/5) | 0.39 | +0.50 |
+
+**OOS enchaine : Sharpe 0.248, p=0.234 (gaussien), p=0.432 (permutation),
+CAGR ~0.3%.**
+
+**Deux reserves honnetes, pas seulement le resultat lui-meme** :
+1. La meme config ("rapide", fenetres les plus courtes de la grille) est
+   choisie a TOUS les folds - la selection sur train n'a jamais reellement
+   arbitre entre plusieurs candidats serieux, contrairement a l'etape 17
+   bis (ADX choisi 6/10 fois, Hurst les 4 autres). Un signal plus court
+   produit mecaniquement plus de trades et un Sharpe train qui parait
+   meilleur (effet d'echantillon), sans que ce soit necessairement le
+   signe d'un edge superieur - a traiter avec prudence.
+2. Le CAGR (~0.3%) est nettement plus bas que le Sharpe seul ne le
+   suggere : le sizing par risque (0.25% du capital par trade, stop large)
+   laisse l'essentiel du capital en cash la plupart du temps - une
+   difference de PHILOSOPHIE de sizing avec le moteur a poids continus
+   (etape 17 bis, quasi toujours investi a 100% quand le signal est actif)
+   plutot qu'un defaut du systeme Donchian en tant que tel.
+
+**Verdict** : meme ordre de grandeur que l'ADX/EMA de l'etape 17 bis
+(Sharpe OOS 0.25 vs 0.30, ni l'un ni l'autre significatif a 5%) - pas une
+amelioration nette, mais une confirmation independante (logique d'entree/
+sortie completement differente) que l'or affiche un leger biais de
+tendance positif, jamais prouve, a cette echelle de temps. Garde en
+parallele de la config actuelle du bot de paper trading (etape 18) plutot
+que de la remplacer - aucun des deux resultats ne justifie de preferer
+l'un a l'autre avec confiance.
+
+**Points souleves par l'utilisateur, non encore traites (a faire avant tout
+passage a du reel)** :
+- Heure/fuseau de cloture des bougies specifique au courtier reel -
+  `yfinance` suit sa propre convention (COMEX), potentiellement differente
+  d'un courtier d'execution (ex: IBKR).
+- Frais modelises actuellement comme un seul cout forfaitaire
+  (`transaction_cost_bps=15`) : pas de spread bid/ask distinct, pas de
+  swap/financement (pertinent pour une detention de futures), et une
+  sortie sur stop qui s'execute au prix du stop lui-meme meme en cas de
+  gap (optimiste - ignore le glissement au-dela du stop).
+- Evaluation separee hausse/baisse/range : pas faite explicitement (le
+  walk-forward separe le temps, pas le regime de marche) - le walk-forward
+  ci-dessus fournit neanmoins une vraie separation train/test stricte.
+- Specifications du contrat et sizing avec effet de levier : **non traite
+  et important** - `GC=F` est un contrat a marge (COMEX, 100 onces/contrat),
+  et le bot de paper trading (etape 18) le traite comme un notional spot
+  entierement finance, pas comme une position a levier. Passer a une
+  execution reelle sur futures (marge, rollover de contrat) changerait
+  fondamentalement le risque reel par rapport a ce qui est mesure ici -
+  chantier separe, pas couvert par ce projet a ce stade.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
