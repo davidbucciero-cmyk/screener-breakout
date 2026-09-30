@@ -13,3 +13,4 @@ crypto_quant/data_cache_trades_deep/
 crypto_quant/data_cache_binanceus/
 crypto_quant/data_cache_binanceus_daily/
 crypto_quant/data_cache_gold/
+crypto_quant/data_cache_multiasset/
