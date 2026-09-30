@@ -114,6 +114,48 @@ def compute_symbol_signals(df: pd.DataFrame, cfg: BacktestConfig) -> pd.DataFram
     )
 
 
+def _assert_no_calendar_gaps(index: pd.DatetimeIndex, max_gap_multiple: float = 3.0) -> None:
+    """Echoue bruyamment si le calendrier BRUT (prix, avant tout calcul de
+    signal) contient un trou (ex: suspension du trading USD sur un exchange
+    - Binance.US, juillet 2023 a fevrier 2025).
+
+    run_backtest itere PAR POSITION (t -> t+1), jamais par date (cf. sa
+    docstring) : sans cette garde, un trou de plusieurs mois entre deux
+    bougies consecutives serait silencieusement traite comme le rendement
+    d'une SEULE periode, contaminant EMA/vol/Hurst et le P&L simule autour
+    de ce point - l'artefact qui a contamine les etapes 9bis a 13 avant
+    detection (voir README, etape 13 bis).
+
+    Applique au calendrier des PRIX BRUTS (avant dropna des signaux) : un
+    signal individuel peut legitimement etre NaN au milieu d'une serie sans
+    qu'il y ait de trou de marche reel (ex: vol glissante nulle sur une
+    periode de prix parfaitement plat - cf. docstring de _align_universe) -
+    ce n'est pas le probleme vise ici, et ne doit pas declencher cette
+    garde.
+
+    Ne corrige rien ici (detection seule) : en cas d'erreur, appeler
+    data.largest_contiguous_segment(price_data) AVANT de construire
+    price_data passe a run_backtest, pour ne garder que le plus grand
+    segment continu.
+    """
+    if len(index) < 3:
+        return
+
+    gaps = index[1:] - index[:-1]
+    modal_step = pd.Series(gaps).mode().iloc[0]
+    max_gap = gaps.max()
+
+    if max_gap > modal_step * max_gap_multiple:
+        gap_pos = int(np.argmax(gaps.values))
+        raise ValueError(
+            f"Trou de calendrier detecte dans les prix bruts : {index[gap_pos]} -> "
+            f"{index[gap_pos + 1]} (ecart de {max_gap} contre un pas typique de {modal_step}). "
+            "Le backtester iterant par position, ce trou serait traite comme le rendement d'une "
+            "seule periode - utiliser data.largest_contiguous_segment(price_data) avant de "
+            "construire l'univers passe a run_backtest/WalkForwardValidator."
+        )
+
+
 def _align_universe(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> Dict[str, pd.DataFrame]:
     """Calcule les signaux par actif puis aligne tous les actifs sur l'index
     (dates) commun a tous, pour pouvoir iterer ligne par ligne en toute
@@ -127,6 +169,11 @@ def _align_universe(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) ->
     NaN comme "aucune contribution" (fillna(0)). Le filtrer ici aussi
     supprimerait silencieusement une grande partie de l'historique valide.
     """
+    raw_common_index = None
+    for df in price_data.values():
+        raw_common_index = df.index if raw_common_index is None else raw_common_index.intersection(df.index)
+    _assert_no_calendar_gaps(raw_common_index.sort_values())
+
     required_cols = ["close", "hurst", "ema_trend", "ewma_vol"]
     per_symbol = {symbol: compute_symbol_signals(df, cfg) for symbol, df in price_data.items()}
 

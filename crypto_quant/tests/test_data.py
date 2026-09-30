@@ -16,7 +16,7 @@ from unittest.mock import patch
 import ccxt
 import pandas as pd
 
-from crypto_quant.data import CCXTDataFeed, resample_trades_to_ohlcv
+from crypto_quant.data import CCXTDataFeed, largest_contiguous_segment, resample_trades_to_ohlcv
 from crypto_quant.synthetic import FakeExchange, FakeTradesExchange, generate_synthetic_ohlcv, generate_synthetic_trades
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "_tmp_cache")
@@ -276,6 +276,50 @@ def test_get_history_from_trades_returns_ohlcv_like_format():
     assert bars.index.is_monotonic_increasing
     assert not bars.isna().any().any()
     assert len(bars) > 0
+
+
+def _daily_frame(dates: pd.DatetimeIndex) -> pd.DataFrame:
+    return pd.DataFrame({"close": range(len(dates))}, index=dates)
+
+
+def test_largest_contiguous_segment_returns_unchanged_when_no_gap():
+    dates = pd.date_range("2024-01-01", periods=100, freq="D", tz="UTC")
+    price_data = {"BTC/USD": _daily_frame(dates), "ETH/USD": _daily_frame(dates)}
+
+    result = largest_contiguous_segment(price_data)
+
+    assert len(result["BTC/USD"]) == 100
+    assert len(result["ETH/USD"]) == 100
+
+
+def test_largest_contiguous_segment_drops_suspended_trading_gap():
+    # Reproduit le cas reel (README, etape 13 bis) : suspension du trading
+    # USD sur Binance.US, juillet 2023 a fevrier 2025 - un trou de plusieurs
+    # mois partage par TOUS les actifs, pas juste un ecart isole sur un seul.
+    before_gap = pd.date_range("2019-09-17", "2023-07-14", freq="D", tz="UTC")
+    after_gap = pd.date_range("2025-02-19", "2026-09-30", freq="D", tz="UTC")
+    dates = before_gap.append(after_gap)
+    price_data = {"BTC/USD": _daily_frame(dates), "ETH/USD": _daily_frame(dates)}
+
+    result = largest_contiguous_segment(price_data)
+
+    # Le segment avant le trou (~1400 jours) est plus grand que celui d'apres
+    # (~588 jours) : c'est lui qui doit etre retenu, en entier et sans trou.
+    assert len(result["BTC/USD"]) == len(before_gap)
+    assert result["BTC/USD"].index[0] == before_gap[0]
+    assert result["BTC/USD"].index[-1] == before_gap[-1]
+    assert (result["BTC/USD"].index.to_series().diff().dropna() == pd.Timedelta(days=1)).all()
+
+
+def test_largest_contiguous_segment_keeps_symbols_aligned():
+    before_gap = pd.date_range("2020-01-01", "2020-06-01", freq="D", tz="UTC")
+    after_gap = pd.date_range("2021-01-01", "2021-01-10", freq="D", tz="UTC")
+    dates = before_gap.append(after_gap)
+    price_data = {"BTC/USD": _daily_frame(dates), "ETH/USD": _daily_frame(dates)}
+
+    result = largest_contiguous_segment(price_data)
+
+    assert list(result["BTC/USD"].index) == list(result["ETH/USD"].index)
 
 
 if __name__ == "__main__":

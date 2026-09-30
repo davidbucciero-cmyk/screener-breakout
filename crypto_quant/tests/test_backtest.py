@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from crypto_quant.backtest import BacktestConfig, compute_live_weights, run_backtest
+from crypto_quant.data import largest_contiguous_segment
 from crypto_quant.synthetic import synthetic_dataframe
 
 FIXED_END_MS = 1_700_000_000_000
@@ -23,6 +24,38 @@ def _small_multi_asset_universe():
             300, end_ms=FIXED_END_MS, drift=0.0, gbm_vol=0.0005, ou_theta=0.25, ou_sigma=0.03, seed=6
         ),
     }
+
+
+def _universe_with_suspension_gap():
+    # Reproduit le cas reel (README, etape 13 bis) : un trou de calendrier
+    # de plusieurs mois partage par tous les actifs (suspension du trading
+    # USD sur Binance.US, juillet 2023 a fevrier 2025).
+    before_gap = pd.date_range("2019-09-17", periods=400, freq="D", tz="UTC")
+    after_gap = before_gap[-1] + pd.Timedelta(days=586) + pd.to_timedelta(range(100), unit="D")
+    dates = before_gap.append(after_gap)
+    close = 100 * np.exp(0.001 * np.arange(len(dates)))
+    return {
+        "BTC/USD": pd.DataFrame({"close": close}, index=dates),
+        "ETH/USD": pd.DataFrame({"close": close * 0.1}, index=dates),
+    }
+
+
+def test_run_backtest_raises_on_calendar_gap():
+    # Sans le garde-fou, ce trou serait traite comme le rendement d'une
+    # seule bougie (cf. _assert_no_calendar_gaps) - doit echouer bruyamment
+    # plutot que de produire un resultat silencieusement fausse.
+    price_data = _universe_with_suspension_gap()
+    with pytest.raises(ValueError, match="Trou de calendrier"):
+        run_backtest(price_data, BacktestConfig())
+
+
+def test_largest_contiguous_segment_fixes_calendar_gap_before_backtest():
+    price_data = _universe_with_suspension_gap()
+    cleaned = largest_contiguous_segment(price_data)
+
+    result = run_backtest(cleaned, BacktestConfig())
+    assert len(result.equity) > 0
+    assert not result.equity.isna().any()
 
 
 def test_run_backtest_basic_shape_and_no_nans():

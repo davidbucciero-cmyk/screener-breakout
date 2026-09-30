@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -87,6 +87,66 @@ def resample_trades_to_ohlcv(trades: pd.DataFrame, timeframe_seconds: int) -> pd
     volume = df["amount"].resample(freq, origin="epoch").sum()
     bars = ohlc.join(volume.rename("volume"))
     return bars.dropna(subset=["open"])
+
+
+def largest_contiguous_segment(
+    price_data: Dict[str, pd.DataFrame], max_gap_multiple: float = 3.0
+) -> Dict[str, pd.DataFrame]:
+    """Detecte les trous de calendrier dans l'univers (ex: suspension du
+    trading USD sur Binance.US, 14 juillet 2023 -> 19 fevrier 2025 suite au
+    proces SEC de juin 2023) et renvoie UNIQUEMENT le plus grand segment
+    continu commun a tous les actifs.
+
+    Sans ce filtre, backtest.run_backtest (qui itere par POSITION, pas par
+    date - cf. sa docstring) traiterait un ecart de plusieurs mois entre
+    deux bougies consecutives comme le rendement d'une SEULE periode : un
+    trou de 586 bougies entre deux cloture de BTC/USD separees de 285% dans
+    les faits deviendrait un "rendement d'une bougie" de +285%, contaminant
+    silencieusement tous les calculs de signaux et de P&L autour de ce point
+    (cf. README, etape 13 bis - c'est exactement ce qui s'est produit avant
+    detection).
+
+    max_gap_multiple : un ecart entre deux bougies consecutives de l'index
+    COMMUN (intersection de tous les actifs fournis) est considere comme un
+    "trou" s'il depasse ce multiple du pas le plus frequent (le mode des
+    ecarts, robuste aux quelques irregularites mineures qui ne signalent pas
+    un vrai probleme).
+
+    Renvoie price_data inchange (aucun segment) si aucun trou n'est detecte.
+    """
+    common_index = None
+    for df in price_data.values():
+        common_index = df.index if common_index is None else common_index.intersection(df.index)
+    common_index = common_index.sort_values()
+
+    if len(common_index) < 3:
+        return price_data
+
+    gaps = common_index[1:] - common_index[:-1]
+    modal_step = pd.Series(gaps).mode().iloc[0]
+    gap_threshold = modal_step * max_gap_multiple
+
+    break_positions = [i + 1 for i, g in enumerate(gaps) if g > gap_threshold]
+    if not break_positions:
+        return price_data
+
+    boundaries = [0] + break_positions + [len(common_index)]
+    segments = [common_index[boundaries[i] : boundaries[i + 1]] for i in range(len(boundaries) - 1)]
+    largest = max(segments, key=len)
+
+    log.warning(
+        "largest_contiguous_segment : %d trou(s) de calendrier detecte(s) (seuil=%s, pas typique=%s) - "
+        "segment retenu : %s -> %s (%d bougies sur %d au total dans l'intersection)",
+        len(segments) - 1,
+        gap_threshold,
+        modal_step,
+        largest[0],
+        largest[-1],
+        len(largest),
+        len(common_index),
+    )
+
+    return {symbol: df.loc[largest] for symbol, df in price_data.items()}
 
 
 class CCXTDataFeed:
