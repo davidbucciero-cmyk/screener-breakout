@@ -32,6 +32,7 @@ class BacktestConfig:
     ema_fast: int = 12
     ema_slow: int = 48
     ema_vol_window: int = 48
+    ema_skip: int = 0  # bougies recentes exclues de l'EMA (cf. "12-1 mois" academique, signals.ema_trend_signal)
     hurst_window: int = 100
     hurst_min_lag: int = 2
     hurst_max_lag: int = 20
@@ -66,7 +67,9 @@ def compute_symbol_signals(df: pd.DataFrame, cfg: BacktestConfig) -> pd.DataFram
     """Calcule les 3 signaux + la vol EWMA pour un actif. Vectorise (pas de
     dependance a l'etat du portefeuille), reutilisable tel quel hors backtest."""
     hurst = rolling_hurst(df["close"], window=cfg.hurst_window, min_lag=cfg.hurst_min_lag, max_lag=cfg.hurst_max_lag)
-    ema_trend = ema_trend_signal(df["close"], fast=cfg.ema_fast, slow=cfg.ema_slow, vol_window=cfg.ema_vol_window)
+    ema_trend = ema_trend_signal(
+        df["close"], fast=cfg.ema_fast, slow=cfg.ema_slow, vol_window=cfg.ema_vol_window, skip=cfg.ema_skip
+    )
     ou_signal = ou_meanreversion_signal(df["close"], window=cfg.ou_window, significance_t=cfg.ou_significance_t)["signal"]
     ewma_vol = ewma_volatility(df["close"], lam=cfg.ewma_lambda)
 

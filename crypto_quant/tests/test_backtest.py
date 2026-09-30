@@ -117,6 +117,28 @@ def test_rebalance_threshold_still_liquidates_immediately_on_circuit_breaker():
     assert (result.weights_history.loc[halted_periods].abs().sum(axis=1) < 1e-9).all()
 
 
+def test_ema_skip_changes_signal_and_weights():
+    # Verifie le cablage de BacktestConfig.ema_skip -> ema_trend_signal :
+    # un skip non nul doit changer la trajectoire de poids (sauf coincidence).
+    price_data = _small_multi_asset_universe()
+    result_no_skip = run_backtest(price_data, BacktestConfig(ema_skip=0))
+    result_with_skip = run_backtest(price_data, BacktestConfig(ema_skip=10))
+
+    assert not result_no_skip.weights_history.equals(result_with_skip.weights_history), (
+        "ema_skip doit modifier le signal de tendance et donc la trajectoire de poids"
+    )
+
+
+def test_top_n_limits_simultaneous_positions():
+    # top_n=1 doit forcer une rotation : jamais plus d'un actif detenu a la fois.
+    price_data = _small_multi_asset_universe()
+    result = run_backtest(price_data, BacktestConfig(top_n=1))
+
+    n_nonzero = (result.weights_history.abs() > 1e-9).sum(axis=1)
+    assert (n_nonzero <= 1).all(), "top_n=1 ne doit jamais laisser plus d'un actif ouvert simultanement"
+    assert (n_nonzero > 0).any(), "Le test suppose qu'au moins une position est prise"
+
+
 def test_drawdown_circuit_breaker_halts_during_backtest_crash():
     # Serie construite a la main (pas le generateur synthetique) pour un
     # controle total. Montee courte (juste assez pour la periode de warm-up

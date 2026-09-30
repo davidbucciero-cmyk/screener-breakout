@@ -59,16 +59,29 @@ def rolling_hurst(close: pd.Series, window: int = 100, min_lag: int = 2, max_lag
     return pd.Series(out, index=close.index, name="hurst")
 
 
-def ema_trend_signal(close: pd.Series, fast: int = 12, slow: int = 48, vol_window: int = 48) -> pd.Series:
+def ema_trend_signal(
+    close: pd.Series, fast: int = 12, slow: int = 48, vol_window: int = 48, skip: int = 0
+) -> pd.Series:
     """Signal de tendance : ecart EMA rapide/lente, normalise par la volatilite.
 
     Positif = tendance haussiere, negatif = tendance baissiere. L'amplitude
     est comparable entre actifs car normalisee par l'ecart-type glissant du
     prix (evite qu'un actif plus volatil domine artificiellement le score
     composite a l'etape 3).
+
+    skip : nombre de bougies les plus recentes exclues du calcul des EMA,
+    analogue au "12-1 mois" du momentum academique (Jegadeesh-Titman 1993)
+    qui exclut le mois le plus recent de la periode de formation pour
+    eviter la contamination par le retournement a tres court terme (dont
+    ou_meanreversion_signal s'occupe deja separement). Concretement, les
+    EMA sont calculees sur close.shift(skip) : le signal a l'instant t
+    reflete alors la tendance telle qu'elle etait a t-skip, pas celle des
+    `skip` dernieres bougies. La normalisation par la volatilite reste sur
+    la volatilite courante (le sizing doit reagir au risque present).
     """
-    ema_fast = close.ewm(span=fast, adjust=False).mean()
-    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    base = close.shift(skip) if skip > 0 else close
+    ema_fast = base.ewm(span=fast, adjust=False).mean()
+    ema_slow = base.ewm(span=slow, adjust=False).mean()
     rolling_vol = close.rolling(vol_window).std()
 
     signal = (ema_fast - ema_slow) / rolling_vol.replace(0, np.nan)

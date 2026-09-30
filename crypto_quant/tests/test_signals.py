@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
+import pandas as pd
 
 from crypto_quant.signals import (
     ema_trend_signal,
@@ -68,6 +69,35 @@ def test_ema_trend_signal_sign_matches_injected_trend():
 
     assert up_signal > 0, "Tendance haussiere doit donner un signal positif"
     assert down_signal < 0, "Tendance baissiere doit donner un signal negatif"
+
+
+def test_ema_trend_signal_skip_ignores_recent_reversal():
+    # Forte tendance haussiere suivie d'un retournement brutal sur les
+    # dernieres bougies : sans skip, l'EMA rapide (span court) reagit deja
+    # au retournement recent ; avec skip=n_down, les EMA sont calculees sur
+    # close.shift(n_down) et ne "voient" donc pas encore ce retournement -
+    # analogue au "12-1 mois" du momentum academique (Jegadeesh-Titman 1993)
+    # qui exclut le mois le plus recent de la periode de formation.
+    n_up, n_down = 300, 15
+    idx = pd.date_range("2020-01-01", periods=n_up + n_down, freq="h", tz="UTC")
+    up = 100 * np.exp(0.01 * np.arange(n_up))
+    down = up[-1] * np.exp(-0.05 * np.arange(1, n_down + 1))
+    close = pd.Series(np.concatenate([up, down]), index=idx)
+
+    signal_no_skip = ema_trend_signal(close, fast=12, slow=48, skip=0).iloc[-1]
+    signal_skip = ema_trend_signal(close, fast=12, slow=48, skip=n_down).iloc[-1]
+
+    assert signal_skip > signal_no_skip, (
+        "Avec skip, le signal doit rester plus haussier que sans skip lors d'un retournement recent"
+    )
+    assert signal_skip > 0, "Le signal avec skip doit rester positif (tendance d'avant retournement)"
+
+
+def test_ema_trend_signal_skip_extends_warmup_nans():
+    df = synthetic_dataframe(120, drift=0.001, gbm_vol=0.005, seed=8)
+    skip = 10
+    signal = ema_trend_signal(df["close"], fast=5, slow=20, vol_window=20, skip=skip)
+    assert signal.iloc[:skip].isna().all(), "Les skip premieres valeurs doivent rester NaN (close.shift(skip))"
 
 
 def test_ou_signal_detects_positive_theta_and_correct_direction():
