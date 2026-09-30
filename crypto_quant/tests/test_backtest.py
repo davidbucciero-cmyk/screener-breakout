@@ -129,6 +129,51 @@ def test_ema_skip_changes_signal_and_weights():
     )
 
 
+def _btc_alt_universe_btc_downtrend():
+    return {
+        "BTC/USD": synthetic_dataframe(
+            300, end_ms=FIXED_END_MS, drift=-0.004, gbm_vol=0.003, ou_theta=0.0, ou_sigma=0.0, seed=20
+        ),
+        "ALT/USD": synthetic_dataframe(
+            300, end_ms=FIXED_END_MS, drift=0.003, gbm_vol=0.005, momentum_rho=0.6, ou_theta=0.0, ou_sigma=0.0, seed=21
+        ),
+    }
+
+
+def test_market_regime_overlay_forces_cash_when_reference_asset_in_downtrend():
+    # Overlay de regime de marche (Starkiller Capital, 2023) : BTC/USD en
+    # tendance baissiere SOUTENUE par construction doit forcer tout le
+    # portefeuille en cash, MEME SI ALT/USD a son propre signal haussier -
+    # c'est un gate au niveau du portefeuille, pas un ajustement par actif.
+    price_data = _btc_alt_universe_btc_downtrend()
+    cfg = BacktestConfig(market_regime_symbol="BTC/USD", market_regime_fast=5, market_regime_slow=50)
+    result = run_backtest(price_data, cfg)
+
+    assert (result.weights_history.iloc[50:].abs().sum(axis=1) < 1e-9).all(), (
+        "Portefeuille entier attendu en cash apres le warm-up de l'EMA lente du gate"
+    )
+
+
+def test_market_regime_overlay_changes_weights_vs_disabled():
+    # MEANREV oscille autour de zero (pas de derive) : son croisement
+    # EMA(5,50) doit basculer plusieurs fois sur 300 bougies, donc le
+    # cablage doit produire une trajectoire de poids differente de la
+    # config par defaut (overlay desactive).
+    price_data = _small_multi_asset_universe()
+    result_disabled = run_backtest(price_data, BacktestConfig())
+    result_enabled = run_backtest(
+        price_data, BacktestConfig(market_regime_symbol="MEANREV", market_regime_fast=5, market_regime_slow=50)
+    )
+    assert not result_disabled.weights_history.equals(result_enabled.weights_history)
+
+
+def test_market_regime_overlay_unknown_symbol_raises():
+    price_data = _small_multi_asset_universe()
+    cfg = BacktestConfig(market_regime_symbol="DOES_NOT_EXIST")
+    with pytest.raises(ValueError):
+        run_backtest(price_data, cfg)
+
+
 def test_ema_bounded_response_changes_signal_and_weights():
     # Verifie le cablage de BacktestConfig.ema_bounded_response ->
     # signals.baz_response : active, il doit changer la trajectoire de

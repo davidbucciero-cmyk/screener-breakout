@@ -18,6 +18,7 @@ from crypto_quant.signals import (
     estimate_dominant_half_life,
     ewma_volatility,
     hurst_exponent,
+    market_regime_signal,
     multi_horizon_trend_signal,
     ou_meanreversion_signal,
     rolling_hurst,
@@ -100,6 +101,19 @@ def test_ema_trend_signal_skip_extends_warmup_nans():
     skip = 10
     signal = ema_trend_signal(df["close"], fast=5, slow=20, vol_window=20, skip=skip)
     assert signal.iloc[:skip].isna().all(), "Les skip premieres valeurs doivent rester NaN (close.shift(skip))"
+
+
+def test_market_regime_signal_risk_on_in_uptrend_risk_off_in_downtrend():
+    n = 300
+    up = synthetic_dataframe(n, drift=0.004, gbm_vol=0.003, ou_theta=0.0, ou_sigma=0.0, seed=12)
+    down = synthetic_dataframe(n, drift=-0.004, gbm_vol=0.003, ou_theta=0.0, ou_sigma=0.0, seed=12)
+
+    up_gate = market_regime_signal(up["close"], fast=5, slow=50)
+    down_gate = market_regime_signal(down["close"], fast=5, slow=50)
+
+    assert up_gate.dtype == bool
+    assert bool(up_gate.iloc[-1]) is True, "Tendance haussiere soutenue doit finir risk-on"
+    assert bool(down_gate.iloc[-1]) is False, "Tendance baissiere soutenue doit finir risk-off"
 
 
 def test_baz_response_bounded_and_sign_preserving():

@@ -88,6 +88,33 @@ def ema_trend_signal(
     return signal.rename("ema_trend")
 
 
+def market_regime_signal(close: pd.Series, fast: int = 5, slow: int = 50) -> pd.Series:
+    """Filtre de regime de marche binaire (Drogen, Hoffstein & Otte, 2023 -
+    Starkiller Capital) : croisement EMA(fast, slow) sur le prix d'un actif
+    DE REFERENCE (typiquement BTC, le plus liquide/le plus suivi), utilise
+    comme signal "tout ou rien" au niveau du PORTEFEUILLE ENTIER plutot que
+    par actif.
+
+    Renvoie True (risk-on, investi) quand EMA_fast > EMA_slow, False
+    (risk-off, cash integral) sinon.
+
+    Difference de nature avec ema_trend_signal/composite_score (qui arbitrent
+    le poids PAR ACTIF via le regime de Hurst) : ici, un seul actif de
+    reference sert d'indicateur de risque pour TOUT le portefeuille - dans
+    le papier original, la superposition de ce filtre sur un portefeuille de
+    momentum cross-sectionnel a fait passer le rendement annualise de 37.8%
+    a 93.3% et le drawdown max de 75% a 45%, en coupant l'exposition
+    entierement pendant les tendances baissieres de Bitcoin plutot qu'en
+    ajustant un poids par actif.
+
+    Ne normalise pas par la volatilite (contrairement a ema_trend_signal) :
+    seul le signe du croisement importe ici, pas son amplitude.
+    """
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    return (ema_fast > ema_slow).rename("market_regime_risk_on")
+
+
 def baz_response(z: pd.Series) -> pd.Series:
     """Fonction de reponse bornee de Baz et al. (2015), utilisee en production
     chez Man AHL et reprise par Rohrbach, Suremann & Osterrieder (2017) pour

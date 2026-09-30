@@ -27,6 +27,7 @@ from .signals import (
     baz_response,
     ema_trend_signal,
     ewma_volatility,
+    market_regime_signal,
     multi_horizon_trend_signal,
     ou_meanreversion_signal,
     rolling_hurst,
@@ -63,6 +64,13 @@ class BacktestConfig:
     transaction_cost_bps: float = 15.0  # cout aller-retour approx (spread+frais taker Kraken)
     initial_capital: float = 10_000.0
     rebalance_threshold: float = 0.0  # zone morte : ne rebalance que si |w_cible - w_detenu| (L1) depasse ce seuil
+
+    # Overlay de regime de marche (Starkiller Capital, 2023) : cash integral
+    # pour TOUT le portefeuille quand market_regime_symbol est en tendance
+    # baissiere, independamment des signaux par actif. Desactive si None.
+    market_regime_symbol: Optional[str] = None
+    market_regime_fast: int = 5
+    market_regime_slow: int = 50
 
 
 @dataclass
@@ -176,6 +184,14 @@ def run_backtest(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> Ba
     vol_df = pd.DataFrame({s: aligned[s]["ewma_vol"] for s in symbols})
     close_df = pd.DataFrame({s: aligned[s]["close"] for s in symbols})
 
+    regime_gate = None
+    if cfg.market_regime_symbol is not None:
+        if cfg.market_regime_symbol not in close_df.columns:
+            raise ValueError(f"market_regime_symbol={cfg.market_regime_symbol!r} absent de l'univers fourni")
+        regime_gate = market_regime_signal(
+            close_df[cfg.market_regime_symbol], fast=cfg.market_regime_fast, slow=cfg.market_regime_slow
+        )
+
     index = raw_scores.index
     equity = np.empty(n)
     equity[0] = cfg.initial_capital
@@ -199,18 +215,23 @@ def run_backtest(price_data: Dict[str, pd.DataFrame], cfg: BacktestConfig) -> Ba
         row_scores = raw_scores.iloc[t]
         row_vols = vol_df.iloc[t]
 
+        market_ok = True if regime_gate is None else bool(regime_gate.iloc[t])
+        trade_ok = allowed and market_ok
+
         w_score = target_weights_row(row_scores, top_n=cfg.top_n)
         w_tilted = inverse_vol_weights(w_score, row_vols)
         leverage = volatility_target_leverage(w_tilted, row_vols, target_vol=cfg.target_vol, max_leverage=cfg.max_leverage)
-        w_target = w_tilted * leverage if allowed else w_tilted * 0.0
+        w_target = w_tilted * leverage if trade_ok else w_tilted * 0.0
 
-        # Zone morte : si le coupe-circuit vient de couper, on liquide TOUJOURS
-        # immediatement (jamais soumis au seuil - c'est une action de risque,
-        # pas un rebalancement de signal). Sinon, ne rebalance que si l'ecart
-        # au poids cible depasse rebalance_threshold - sans ca, un signal qui
-        # ne bouge vraiment qu'a l'echelle de ses fenetres (des jours) declenche
-        # quand meme un rebalancement (et son cout) a chaque bougie.
-        if allowed and cfg.rebalance_threshold > 0:
+        # Zone morte : si le coupe-circuit vient de couper OU que l'overlay de
+        # regime de marche est passe risk-off, on liquide TOUJOURS
+        # immediatement (jamais soumis au seuil - ce sont des actions de
+        # risque, pas un rebalancement de signal). Sinon, ne rebalance que si
+        # l'ecart au poids cible depasse rebalance_threshold - sans ca, un
+        # signal qui ne bouge vraiment qu'a l'echelle de ses fenetres (des
+        # jours) declenche quand meme un rebalancement (et son cout) a chaque
+        # bougie.
+        if trade_ok and cfg.rebalance_threshold > 0:
             proposed_turnover = (w_target - prev_weights).abs().sum()
             w_held = prev_weights if proposed_turnover < cfg.rebalance_threshold else w_target
         else:
