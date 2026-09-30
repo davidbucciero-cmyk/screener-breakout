@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from crypto_quant.signals import (
     adx,
@@ -63,6 +64,28 @@ def test_rolling_hurst_has_correct_shape_and_warmup_nans():
     assert len(h_series) == len(df)
     assert h_series.iloc[: window - 1].isna().all()
     assert h_series.iloc[window - 1 :].notna().all()
+
+
+def test_rolling_hurst_rejects_non_positive_prices():
+    # Trouve en pratique sur le futures WTI (CL=F), passe negatif le
+    # 2020-04-20 (-37.63$) - log(prix) indefini, propagerait un NaN
+    # silencieux sur toute fenetre glissante qui le contient plutot que
+    # d'echouer bruyamment. Cf. signals._require_positive_prices.
+    close = pd.Series(
+        np.concatenate([np.full(50, 100.0), [-37.63], np.full(50, 100.0)]),
+        index=pd.date_range("2024-01-01", periods=101, freq="D", tz="UTC"),
+    )
+    with pytest.raises(ValueError, match="prix <= 0"):
+        rolling_hurst(close, window=20)
+
+
+def test_ou_meanreversion_signal_rejects_non_positive_prices():
+    close = pd.Series(
+        np.concatenate([np.full(50, 100.0), [0.0], np.full(50, 100.0)]),
+        index=pd.date_range("2024-01-01", periods=101, freq="D", tz="UTC"),
+    )
+    with pytest.raises(ValueError, match="prix <= 0"):
+        ou_meanreversion_signal(close, window=20)
 
 
 def test_ema_trend_signal_sign_matches_injected_trend():

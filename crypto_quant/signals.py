@@ -28,6 +28,27 @@ import numpy as np
 import pandas as pd
 
 
+def _require_positive_prices(close: pd.Series, caller: str) -> None:
+    """Echoue bruyamment si `close` contient un prix <= 0 - le log-prix
+    (Hurst, OU) en fait un NaN qui se propage silencieusement sur toute la
+    fenetre glissante qui le contient (jusqu'a `window` bougies contaminees
+    par UN SEUL point aberrant), sans jamais lever d'erreur explicite -
+    exactement le genre de corruption silencieuse qu'on a appris a se
+    mefier (cf. le trou de calendrier Binance.US, etape 13 bis). Trouve en
+    pratique sur le futures WTI (CL=F), qui est passe negatif le
+    2020-04-20 (-37.63$, livraison physique impossible pendant le
+    confinement COVID) - un actif avec ce genre d'evenement doit etre
+    explicitement exclu de l'univers ou nettoye en amont, pas laisse
+    corrompre silencieusement le reste du pipeline."""
+    bad = close[close <= 0]
+    if not bad.empty:
+        raise ValueError(
+            f"{caller} : prix <= 0 detecte(s) ({len(bad)} bougie(s), ex: {bad.index[0]}={bad.iloc[0]}) - "
+            "log(prix) indefini, propagerait un NaN silencieux sur toute fenetre glissante qui le contient. "
+            "Exclure cet actif de l'univers ou nettoyer la serie avant de calculer Hurst/OU."
+        )
+
+
 def hurst_exponent(log_prices: np.ndarray, min_lag: int = 2, max_lag: int = 20) -> float:
     """Exposant de Hurst par la methode de la variance des increments.
 
@@ -52,6 +73,7 @@ def hurst_exponent(log_prices: np.ndarray, min_lag: int = 2, max_lag: int = 20) 
 
 def rolling_hurst(close: pd.Series, window: int = 100, min_lag: int = 2, max_lag: int = 20) -> pd.Series:
     """Exposant de Hurst glissant, calcule sur le log-prix."""
+    _require_positive_prices(close, "rolling_hurst")
     log_close = np.log(close.values)
     out = np.full(len(close), np.nan)
     for i in range(window, len(close) + 1):
@@ -267,6 +289,7 @@ def ou_meanreversion_signal(
 
     Renvoie un DataFrame avec les colonnes: theta, mu, signal, half_life.
     """
+    _require_positive_prices(close, "ou_meanreversion_signal")
     log_close = np.log(close.values)
     n = len(close)
 
