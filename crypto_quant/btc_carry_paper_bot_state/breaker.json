@@ -1,0 +1,1 @@
+{"halt_drawdown": 0.2, "resume_drawdown": 0.1, "cooldown_periods": 5, "running_max": 10000.0, "halted": false, "periods_since_halt": 0}

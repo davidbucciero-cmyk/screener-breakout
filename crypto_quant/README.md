@@ -79,6 +79,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 21 - 14 blocs quant independants (`advanced_signals.py` : GARCH, HMM, cointegration, carry, facteurs macro, option implicite, divergence KL/JS, agregation bayesienne, VWAP approxime, parite des risques, ML regularise) + test SPA (Hansen 2005, `metrics.py`) pour corriger le data-snooping d'une recherche combinatoire
 - [x] Etape 21 bis - Recherche combinatoire walk-forward sur 12 blocs x 2 methodes de fusion (8192 configs/fold) - 2 bugs majeurs trouves et corriges (lookahead, artefact d'echelle GLD/once) ; `cash_carry` robuste seul mais echoue au test SPA une fois la recherche massive prise en compte
 - [x] Etape 21 ter/quater - Amelioration du bloc `cash_and_carry_consistency` (taux court terme, echeance dynamique, proxy spot ensemble GLD+IAU+SGOL, lease rate documente comme non-corrigeable) puis test d'un **spread neutre au marche** (long/short) plutot qu'un signal directionnel - seul resultat de la session a passer le test SPA sur 5/6 folds, mais necessite une infra de vente a decouvert absente du projet
+- [x] Etape 22 - Pivot vers le **carry BTC** (`btc_carry.py`, `btc_carry_paper_bot.py`) suite a l'etude d'un repo GitHub de cash-and-carry BTC - bug reseau ccxt generalise (Kraken Futures/Deribit accessibles), bruit inter-exchange diagnostique (Binance.US+Deribit ecarte au profit de Kraken seul), fold calme diagnostique et corrige par une porte de volatilite + une bande sans-trade (OOS Sharpe 3 folds : 0.84 -> 1.62 -> 1.82), futures trimestriels testes puis explicitement ECARTES (illiquidite ~150000x-3000000x vs le perpetuel, Sharpe 3.86/SPA p=0.000 identifie comme un artefact de donnees) - bot de paper trading deploye (Routine quotidienne), PAPER TRADING UNIQUEMENT
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -1152,6 +1153,161 @@ projet logiciel. Le seul usage concret fait ici : confirmer par Hull
 empiriquement pour `cash_and_carry_consistency` correspond exactement au
 rendement de convenance de la theorie canonique du cout de portage - pas
 une nouvelle piste, une validation theorique d'un probleme deja connu.
+
+## Etape 22 - Pivot vers le carry BTC (perpetuel Kraken vs spot Kraken)
+
+**Contexte** : a la demande de l'utilisateur, etude d'un depot GitHub
+public (KrishSaraf/BTC-Cash-and-Carry) implementant un arbitrage
+cash-and-carry BTC reel (long spot Binance / short futures COIN-M
+inverses, rollover automatique, re-hedging delta, execution TWAP/PoV) -
+exactement l'infrastructure de short qui manquait au spread or de
+l'etape 21 quater. Decision explicite de l'utilisateur de pivoter vers
+le carry BTC plutot que de continuer a batir cette infra pour l'or.
+
+**Bug reseau generalise** : le fix deja documente pour le spot Kraken
+(etape 7 - `ccxt` met `session.trust_env = False` par defaut, ignore
+les variables d'environnement de proxy de cet environnement) s'applique
+identiquement a Kraken Futures (`krakenfutures`) et Deribit - diagnostic
+et fix confirmes par des appels directs (`ex.session.trust_env = True`
+avant tout appel reseau), aucun changement necessaire dans
+`data.py:build_exchange` (meme convention qu'a l'etape 7 : fix au point
+d'appel, pas en dur dans le code reutilisable).
+
+**Premiere tentative (ECARTEE) : Binance.US spot + Deribit perpetuel.**
+Les deux exchanges sont individuellement accessibles avec une
+profondeur d'historique correcte (~7 ans chacun), mais le "basis"
+mesure entre les deux s'est revele domine par du **bruit inter-exchange**
+plutot que par un vrai signal de carry : ecart-type ~159 bps/JOUR,
+moyenne quasi nulle et de signe different chaque annee (2019: -36bps,
+2020: +9bps, 2021: +10bps, 2022: -7bps...) - le meme type de piege que
+l'artefact d'echelle GLD/GC=F de l'etape 21 bis, mais ici du bruit de
+dispersion entre deux carnets d'ordres differents, pas un probleme
+d'unite.
+
+**Deuxieme tentative (RETENUE) : spot Kraken + perpetuel Kraken Futures
+(meme exchange pour les deux jambes).** Ecart-type tombe a ~14 bps/jour,
+basis moyen ~1bp (quasi nul, coherent avec un perpetuel dont le funding
+le tire en continu vers le spot) mais avec une relation de retour a la
+moyenne forte et stable :
+
+- Correlation (z-score du basis au jour t-1, rendement du spread au jour
+  t) = **-0.61** sur toute la fenetre - la relation la plus nette
+  trouvee cette session, toutes pistes confondues.
+- **Robuste au split en deux moities independantes** (le test qui avait
+  invalide le resultat de l'etape 20) : corr=-0.664 sur la 1ere moitie,
+  -0.609 sur la 2eme.
+- **Robuste a la fenetre du z-score** (jamais recherchee, juste fixee a
+  30 jours) : corr stable entre -0.586 et -0.638 pour des fenetres de 10
+  a 90 jours, Sharpe croissant lisse (1.27 a 1.62), aucune cassure ni
+  inversion de signe.
+
+**Limite reelle de donnees assumee** : l'API publique Kraken (spot ET
+futures) plafonne a ~720 bougies journalieres quel que soit `since`
+demande (meme limite deja documentee pour le spot seul a l'etape 7) -
+fenetre de travail reelle de seulement **721 jours (~2 ans)**, pas les
+6+ folds dont beneficie l'or (25 ans). Walk-forward a 3 folds seulement
+sur cette fenetre (2024-10-11 -> 2026-10-01).
+
+### Construction du backtest : 3 iterations, chacune avec un vrai diagnostic
+
+**v1 - seuil d'entree + levier cible de vol (comme le spread or, etape
+21 quater)** : echec total. OOS Sharpe enchaine = **-2.19**, SPA p=0.99
+sur les 3 folds. Diagnostic : la vol du spread perpetuel/spot est
+minuscule (le funding la tire en continu vers zero), donc un levier
+cible de vol a 1% explosait a son plafond de 5x en permanence,
+amplifiant le cout de turnover bien au-dela de l'edge disponible.
+
+**v2 - exposition continue (-z/clip_z, bornee [-1,1]), cout reel Kraken
+Futures (5bps taker, verifie sur l'info marche PI_XBTUSD)** : OOS
+Sharpe enchaine = **0.839**, mais tres inegal entre folds :
+
+| Fold | Sharpe test | p-value SPA |
+|---|---|---|
+| 1 (2025-04->2025-10) | **-3.48** | 0.993 |
+| 2 (2025-10->2026-04) | 1.33 | 0.111 |
+| 3 (2026-04->2026-10) | 2.25 | 0.000 |
+
+**Diagnostic du fold 1** (demande explicitement par l'utilisateur) :
+decomposition jour par jour - le Sharpe BRUT (hors cout) du fold 1 est
+excellent (6.74, coherent avec les autres folds), le probleme est
+entierement le COUT. Le turnover est quasi FIXE d'un fold a l'autre
+(~45-46 unites cumulees, pilote par le bruit du z-score jour apres jour,
+independant du regime de marche), alors que le profit BRUT est
+proportionnel a la volatilite REELLE du basis (std 7.8bps en fold 1 vs
+13.9/19.5 en folds 2/3 - fold 1 est simplement tombe sur la periode la
+plus calme). Cout quasi fixe (~455-461bps) + profit variable (311/585/
+687bps) = ratio brut/cout de 0.68 en fold 1 (perdant) contre 1.29/1.51
+en folds 2/3 (gagnants).
+
+**v3 - porte de volatilite + bande sans-trade** (corrige directement le
+diagnostic ci-dessus) :
+- `basis_vol_gate` : coupe le trading quand l'ecart-type glissant recent
+  du basis (20 jours) est sous un seuil - ne force plus de trades dans
+  un regime trop calme pour couvrir le cout fixe.
+- `no_trade_band` : ne rebalance que si l'exposition cible s'ecarte de
+  la position courante de plus qu'une bande - reduit le turnover de
+  dithering quotidien (z bruite, autocorrelation ~0.09) ~7x (302 ->41
+  trades sur 721 jours a bande=0.7) sans detruire l'edge.
+
+| Fold | Sharpe test | p-value SPA |
+|---|---|---|
+| 1 | **0.04** (etait -3.48) | 0.625-0.737 selon la config |
+| 2 | **2.45** (etait 1.33) | **0.010** |
+| 3 | **2.23** (etait 2.25) | **0.000** |
+
+**OOS Sharpe enchaine final : 1.82** (0.84 -> 1.62 avec la porte seule
+-> 1.82 avec porte+bande). Le fold 1 reste inconclusif (pas negatif,
+juste pas significatif) - la porte de volatilite le laisse a l'ecart
+84% du temps (contre 34% en folds 2/3), reconnaissant correctement ce
+regime comme trop calme plutot que de continuer a perdre.
+
+**Sensibilite au cout** (le vrai point de fragilite identifie) : la
+version SANS bande bascule nette entre 5 et 8 bps de cout aller-retour
+(Sharpe 1.53 -> -0.22) - viable seulement avec une execution proche du
+maker (2bps chez Kraken Futures), pas des ordres au marche naifs. La
+bande sans-trade elargit nettement cette marge (folds 2/3 restent
+profitables meme a 8bps avec la bande).
+
+### Piste explicitement ECARTEE : futures trimestriels dates
+
+Teste sur demande explicite ("teste la piste 1, les futures
+trimestriels") : reconstitution d'une serie "front quarter" continue en
+enchainant 9 contrats trimestriels Kraken successifs (`FF_XBTUSD_YYMMDD`,
+identifies par essai direct sur l'API `charts` de Kraken Futures,
+chaque contrat liste ~7 mois avant son echeance). Resultat initial
+spectaculaire - OOS Sharpe 3.86, SPA p=0.000 sur 2 folds - **invalide
+par une verification de volume avant d'etre rapporte comme un
+resultat** : volume quotidien median des trimestriels (0.65 a 13.5 BTC)
+contre ~2 098 187 BTC pour le perpetuel - **150 000x a 3 000 000x moins
+liquide**. Les cloture journalieres des trimestriels, sur certaines
+periodes, representaient 1500$ a 60 000$ de volume notionnel total pour
+toute la journee - pas des prix de marche exploitables, le Sharpe
+elevant n'etait qu'un artefact de donnees illiquides (meme mecanisme
+que l'invalidation Polymarket par le vrai carnet d'ordres, plus tot
+dans la session). Seul le perpetuel est utilisable en pratique sur
+Kraken.
+
+### Code et deploiement
+
+- **`btc_carry.py`** : `basis_bps`, `basis_zscore`, `basis_vol_gate`,
+  `carry_spread_equity` (le backtest complet) - `BTCCarryConfig`
+  dataclass pour les hyperparametres. 7 tests (`test_btc_carry.py`).
+- **`btc_carry_paper_bot.py`** : bot de paper trading, meme philosophie
+  que `gold_paper_bot.py` (etape 18) mais reimplemente le pas-a-pas en
+  INCREMENTAL (etat persiste jour par jour) plutot qu'en un seul passage
+  vectorise, car `LiveExecutor` (etape 6) ne modelise que des positions
+  longues sur un symbole unique - pas adapte a un spread a deux jambes.
+  N'utilise PAS LiveExecutor. 6 tests (`test_btc_carry_paper_bot.py`).
+- **Routine quotidienne creee et activee** ("BTC carry paper bot -
+  execution quotidienne", 00:15 UTC - apres la cloture de la bougie
+  journaliere Kraken a 00:00 UTC) : execute `run_daily_step()`, commit/
+  push l'etat si une nouvelle bougie a ete traitee.
+- **PAPER TRADING STRICT** : aucun ordre reel, aucune cle API, pas de
+  `LiveExecutor`. Un passage au reel necessiterait une infra de vente a
+  decouvert (absente du projet) - Kraken Futures la supporte nativement
+  (pas d'emprunt de titres comme pour un ETF or), donc c'est desormais
+  un chantier d'EXECUTION plutot qu'un obstacle structurel, mais
+  toujours un chantier separe, non entame.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
