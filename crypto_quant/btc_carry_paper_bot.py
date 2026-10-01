@@ -115,6 +115,22 @@ def _save_position_state(state_dir: str, prev_position: float, cash_equity: floa
         json.dump({"prev_position": prev_position, "cash_equity": cash_equity}, f)
 
 
+def _daily_log_path(state_dir: str) -> str:
+    return os.path.join(state_dir, "daily_log.csv")
+
+
+def _append_daily_log(state_dir: str, row: dict) -> None:
+    """Journal append-only (une ligne par jour execute) - `position.json`
+    n'est qu'un instantane ecrase a chaque appel, ce fichier est le seul
+    endroit ou suivre l'historique de l'equity paper dans le temps."""
+    path = _daily_log_path(state_dir)
+    df_row = pd.DataFrame([row])
+    if os.path.exists(path):
+        df_row.to_csv(path, mode="a", header=False, index=False)
+    else:
+        df_row.to_csv(path, mode="w", header=True, index=False)
+
+
 def run_daily_step(
     state_dir: str = DEFAULT_STATE_DIR,
     config: BTCCarryConfig = DEFAULT_CONFIG,
@@ -185,6 +201,20 @@ def run_daily_step(
     _save_position_state(state_dir, new_position, final_equity)
     save_breaker_state(breaker, os.path.join(state_dir, "breaker.json"))
     _save_last_run_date(state_dir, last_date_str)
+    _append_daily_log(
+        state_dir,
+        {
+            "date": last_date_str,
+            "spot_close": float(spot.iloc[-1]),
+            "perp_close": float(perp.iloc[-1]),
+            "basis_bps": float((perp.iloc[-1] / spot.iloc[-1] - 1) * 10000),
+            "trading_allowed": allowed,
+            "prev_position": prev_position,
+            "new_position": new_position,
+            "turnover": turnover,
+            "equity": final_equity,
+        },
+    )
 
     return {
         "status": "execute",

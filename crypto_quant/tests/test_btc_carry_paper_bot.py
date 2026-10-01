@@ -42,6 +42,32 @@ def test_run_daily_step_basic_execution(tmp_path):
     assert os.path.exists(os.path.join(tmp_path, "breaker.json"))
     assert os.path.exists(os.path.join(tmp_path, "position.json"))
     assert os.path.exists(os.path.join(tmp_path, "last_run.json"))
+    assert os.path.exists(os.path.join(tmp_path, "daily_log.csv"))
+
+
+def test_daily_log_accumulates_one_row_per_executed_day(tmp_path):
+    spot, perp = _spot_perp(n=60, spike_at=40)
+    cfg = _light_cfg()
+
+    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp)
+    log_df = pd.read_csv(os.path.join(tmp_path, "daily_log.csv"))
+    assert len(log_df) == 1
+    assert list(log_df.columns) == [
+        "date", "spot_close", "perp_close", "basis_bps", "trading_allowed", "prev_position", "new_position", "turnover", "equity",
+    ]
+
+    new_idx = spot.index[-1] + pd.Timedelta(days=1)
+    spot2 = pd.concat([spot, pd.Series([float(spot.iloc[-1]) * 1.005], index=[new_idx])])
+    perp2 = pd.concat([perp, pd.Series([float(perp.iloc[-1]) * 0.998], index=[new_idx])])
+    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2)
+
+    log_df2 = pd.read_csv(os.path.join(tmp_path, "daily_log.csv"))
+    assert len(log_df2) == 2  # une ligne de plus, pas ecrasee
+
+    # Rejouer le meme jour (idempotent) ne doit RIEN ajouter au journal.
+    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2)
+    log_df3 = pd.read_csv(os.path.join(tmp_path, "daily_log.csv"))
+    assert len(log_df3) == 2
 
 
 def test_run_daily_step_is_idempotent_for_same_date(tmp_path):
