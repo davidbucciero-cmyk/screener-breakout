@@ -173,6 +173,74 @@ def permutation_test_sharpe(
     return {"observed_sharpe": observed_sharpe, "p_value": p_value, "n_simulations": valid_sims}
 
 
+def spa_test(
+    strategy_returns: pd.DataFrame,
+    benchmark_returns: pd.Series,
+    n_bootstrap: int = 1000,
+    block_size: int = 10,
+    seed: Optional[int] = None,
+) -> dict:
+    """Test de Superior Predictive Ability (Hansen, 2005) : corrige la
+    p-value du MEILLEUR backtest parmi plusieurs strategies testees pour le
+    nombre de configurations essayees - la limite reconnue de notre propre
+    methodologie walk-forward depuis la lecture de Baur et al. (2018) sur
+    l'or (cf. README, etape 17 bis) : choisir la meilleure config sur train
+    protege du data-snooping LOCAL a chaque fold, mais pas du fait d'avoir
+    essaye plusieurs GRILLES de config au fil de la session.
+
+    Hypothese nulle : aucune des strategies testees ne bat le benchmark en
+    esperance, UNE FOIS pris en compte qu'on a cherche parmi
+    strategy_returns.shape[1] candidates, pas une seule choisie a l'avance.
+
+    Methode (version simplifiee de Hansen 2005) : bootstrap PAR BLOCS
+    (prefere a un bootstrap i.i.d. a cause de l'autocorrelation des
+    rendements financiers) de l'exces de rendement de chaque strategie sur
+    le benchmark, recentre sous l'hypothese nulle, puis compare la
+    meilleure statistique observee (type t-stat) a la distribution
+    bootstrap du MAXIMUM sur toutes les strategies - une strategie peut
+    sembler significative isolement (p<0.05 au sens de sharpe_significance)
+    tout en ne l'etant plus une fois cette correction appliquee.
+
+    strategy_returns : DataFrame, une colonne par strategie/config testee
+    (memes dates que benchmark_returns, non necessairement alignees -
+    l'alignement est fait ici).
+    """
+    excess = strategy_returns.sub(benchmark_returns, axis=0).dropna()
+    n, k = excess.shape
+    if n < block_size * 5:
+        raise ValueError(f"spa_test necessite au moins {block_size * 5} observations, {n} fournies")
+
+    mean_excess = excess.mean()
+    std_excess = excess.std()
+    observed_stats = (mean_excess / std_excess * np.sqrt(n)).fillna(-np.inf)
+    observed_max_stat = float(observed_stats.max())
+    best_strategy = observed_stats.idxmax()
+
+    rng = np.random.default_rng(seed)
+    centered = excess - mean_excess  # recentre sous H0 (Hansen 2005)
+
+    n_blocks = int(np.ceil(n / block_size))
+    boot_max_stats = np.empty(n_bootstrap)
+    for b in range(n_bootstrap):
+        block_starts = rng.integers(0, n - block_size + 1, size=n_blocks)
+        idx = np.concatenate([np.arange(s, s + block_size) for s in block_starts])[:n]
+        sample = centered.values[idx]
+        boot_mean = sample.mean(axis=0)
+        boot_std = sample.std(axis=0)
+        boot_stats = np.where(boot_std > 0, boot_mean / boot_std * np.sqrt(n), -np.inf)
+        boot_max_stats[b] = boot_stats.max()
+
+    p_value = float(np.mean(boot_max_stats >= observed_max_stat))
+
+    return {
+        "best_strategy": best_strategy,
+        "observed_statistic": observed_max_stat,
+        "p_value": p_value,
+        "n_strategies_tested": k,
+        "n_bootstrap": n_bootstrap,
+    }
+
+
 def average_turnover(weights_history: pd.DataFrame) -> float:
     """Turnover moyen par periode : somme des variations absolues de poids.
 
