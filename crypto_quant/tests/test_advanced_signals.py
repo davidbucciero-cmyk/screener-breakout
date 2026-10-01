@@ -17,6 +17,7 @@ from crypto_quant.advanced_signals import (
     cointegration_spread_signal,
     cross_sectional_momentum_tilt,
     daily_vwap_approx,
+    days_to_futures_month_end,
     garch_volatility,
     hmm_regime_signal,
     implied_probability_from_options,
@@ -135,6 +136,30 @@ def test_cash_and_carry_consistency_detects_genuine_ratio_shift():
     front.iloc[200:] *= 1.05  # le ratio front/spot saute nettement a partir du jour 200
     result = cash_and_carry_consistency(front, spot, risk_free_rate=0.0, days_to_next_expiry=90, normalization_window=100)
     assert result["deviation"].iloc[205:215].abs().mean() > 1.0
+
+
+def test_days_to_futures_month_end_bounded_and_resets_monthly():
+    index = pd.date_range("2024-01-01", periods=70, freq="D")
+    days = days_to_futures_month_end(index)
+    assert (days >= 1).all()
+    assert (days <= 31).all()
+    # Fin janvier (31 jours, periode 0-30) : 1 jour restant. Debut fevrier
+    # (periode 31) : repart haut (fin fevrier encore loin).
+    assert days.iloc[30] == 1
+    assert days.iloc[31] > days.iloc[30]
+
+
+def test_cash_and_carry_consistency_accepts_dynamic_expiry_and_rate_series():
+    # Pas de days_to_next_expiry explicite (None) -> doit utiliser
+    # days_to_futures_month_end automatiquement, et accepter un taux sous
+    # forme de Series (ex: ^IRX reindexe) sans lever d'erreur.
+    index = pd.date_range("2024-01-01", periods=300, freq="D")
+    spot = pd.Series(100.0, index=index)
+    front = spot * 10.5
+    rate_series = pd.Series(0.03, index=index)
+    result = cash_and_carry_consistency(front, spot, risk_free_rate=rate_series, normalization_window=100)
+    assert len(result) == len(index)
+    assert result["deviation"].notna().any()
 
 
 def test_macro_factor_exposure_recovers_known_beta():

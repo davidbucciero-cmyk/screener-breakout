@@ -194,11 +194,29 @@ def cross_sectional_momentum_tilt(returns_by_asset: pd.DataFrame, lookback: int 
     return weights
 
 
+def days_to_futures_month_end(index: pd.DatetimeIndex) -> pd.Series:
+    """Jours restants jusqu'a la fin du mois calendaire courant - PROXY de
+    l'echeance du contrat front-month (le COMEX negocie des contrats
+    mensuels sur l'or, expirant generalement en fin de mois de livraison).
+
+    APPROXIMATION ASSUMEE : pas la vraie date d'expiration du contrat
+    precis actif a chaque instant (non disponible via nos sources sur
+    l'historique - seul le contrat COURANT, ex. GCZ26.CMX, est interrogeable,
+    cf. etape 21/21bis) - mais un cycle correct EN MOYENNE (0 a ~30 jours,
+    jamais un horizon fixe arbitraire comme le 60 jours utilise avant ce
+    correctif), suffisant pour une estimation de cout de portage.
+    """
+    idx = pd.DatetimeIndex(index)
+    month_end = idx + pd.offsets.MonthEnd(0)
+    days = (month_end - idx).days.to_series(index=idx).clip(lower=1)
+    return days.rename("days_to_month_end")
+
+
 def cash_and_carry_consistency(
     front_price: pd.Series,
     etf_price: pd.Series,
-    risk_free_rate: float,
-    days_to_next_expiry: float,
+    risk_free_rate,
+    days_to_next_expiry=None,
     normalization_window: int = 250,
 ) -> pd.DataFrame:
     """Verifie la coherence sans-arbitrage entre le contrat futures
@@ -211,25 +229,45 @@ def cash_and_carry_consistency(
         futures_theorique = spot_proxy * exp(taux_sans_risque * T)
     Un ecart important et persistant entre le futures observe et ce
     theorique signale soit un cout de portage implicite different de
-    l'hypothese (ex: lease rate de l'or non nul), soit une vraie
-    inefficience exploitable.
+    l'hypothese (ex: lease rate de l'or non nul - NON modelise ici, cf.
+    limite ci-dessous), soit une vraie inefficience exploitable.
 
-    BUG CORRIGE (trouve en recherche de combinaison, etape 21 bis) : GLD ne
-    represente PAS 1 once d'or (ratio observe ~10.5x, GLD cote en $/part,
-    GC=F en $/once) - utiliser `theoretical_futures` BRUT comme reference
-    rendait `deviation` enorme et quasi constante (domine par cet ecart
-    d'UNITE, pas par une vraie incoherence de marche), ce qui produisait un
-    "signal" en realite une proxy deguisee de la tendance de long terme
-    (Sharpe walk-forward ~1.4, bien au-dela de tout ce qui a ete trouve
-    ailleurs cette session - le signe classique d'un artefact, confirme en
-    verifiant le ratio GC=F/GLD directement). Fixe en normalisant le RATIO
-    front/spot_proxy contre sa PROPRE moyenne/ecart-type glissants
-    (z-score) plutot que de comparer un niveau absolu a une formule
-    theorique qui suppose une correspondance 1:1 inexistante.
+    risk_free_rate : float OU pd.Series. Doit etre un taux COURT TERME
+    (ex: bon du Tresor 3 mois, ^IRX) coherent avec l'horizon du contrat -
+    un taux 10 ans (ex: ^TNX) introduirait un biais systematique via les
+    variations de la pente de la courbe des taux, sans rapport avec une
+    vraie incoherence sur l'or (corrige a l'etape 21 ter : ^TNX -> ^IRX).
+
+    days_to_next_expiry : float OU pd.Series OU None. None (par defaut)
+    utilise days_to_futures_month_end(front_price.index) - une echeance
+    DYNAMIQUE (0 a ~30 jours selon la date), plutot qu'une constante
+    arbitraire (60 jours fixes utilises avant ce correctif, etape 21 ter).
+
+    LIMITE NON CORRIGEE : le lease rate de l'or (taux de pret/emprunt
+    physique, generalement different et plus bas que le taux sans risque
+    nominal) n'est pas disponible depuis la fin de la publication du GOFO
+    (2015) - cette fonction suppose implicitement un lease rate nul, une
+    approximation, pas la vraie theorie du cout de portage sur l'or.
+
+    BUG CORRIGE (etape 21 bis) : GLD ne represente PAS 1 once d'or (ratio
+    observe ~10.5x, GLD cote en $/part, GC=F en $/once) - utiliser un
+    niveau absolu comme reference rendait `deviation` dominee par cet
+    ecart d'UNITE, pas par une vraie incoherence de marche. Fixe en
+    normalisant le RATIO front/spot_proxy contre sa PROPRE moyenne/
+    ecart-type glissants (z-score) plutot qu'un niveau absolu.
     """
     common_index = front_price.index.intersection(etf_price.index)
     front = front_price.reindex(common_index)
     spot_proxy = etf_price.reindex(common_index)
+
+    if days_to_next_expiry is None:
+        days_to_next_expiry = days_to_futures_month_end(common_index)
+        if not isinstance(days_to_next_expiry, pd.Series):
+            days_to_next_expiry = pd.Series(days_to_next_expiry, index=common_index)
+    elif isinstance(days_to_next_expiry, pd.Series):
+        days_to_next_expiry = days_to_next_expiry.reindex(common_index)
+    if isinstance(risk_free_rate, pd.Series):
+        risk_free_rate = risk_free_rate.reindex(common_index)
 
     T = days_to_next_expiry / 365.0
     theoretical_ratio = np.exp(risk_free_rate * T)  # ecart theorique MULTIPLICATIF attendu (cout de portage), independant de l'unite
