@@ -14,6 +14,14 @@ pas-a-pas que `btc_carry.carry_spread_equity` (etapes 22/22 ter), mais
 en version INCREMENTALE (un seul jour a la fois, etat persiste) plutot
 qu'en un seul passage vectorise sur tout l'historique.
 
+Execution HYBRIDE (etape 22 octies) : le SIGNAL continue d'etre calcule
+sur Kraken (spot+perpetuel - le marche le moins efficient parmi 8
+exchanges verifies, donc celui qui a vraiment un edge), mais la jambe
+spot s'execute sur OKX (moins cher, 10bps maker contre 16bps Kraken) -
+verifie que le bruit OKX/Kraken (ecart-type ~5.8bps/jour) ne detruit pas
+l'edge une fois correctement modelise (voir docstring de
+`btc_carry.carry_spread_equity`, parametre `exec_spot`).
+
 Reutilise quand meme : `risk.DrawdownCircuitBreaker` +
 `execution.save/load_breaker_state` (meme coupe-circuit, meme
 persistance que le bot or) et les fonctions de signal de `btc_carry.py`
@@ -47,12 +55,18 @@ DEFAULT_CONFIG = BTCCarryConfig()
 HISTORY_DAYS = 180
 
 
-def fetch_btc_spot_and_perp(history_days: int = HISTORY_DAYS, cache_dir: str = DEFAULT_CACHE_DIR) -> tuple[pd.Series, pd.Series]:
-    """Recupere spot Kraken (BTC/USD) et perpetuel Kraken Futures
-    (BTC/USD:BTC, PI_XBTUSD), memes deux jambes que celles validees en
-    walk-forward a l'etape 22 - meme exchange pour les deux cotes (cf.
+def fetch_btc_spot_and_perp(
+    history_days: int = HISTORY_DAYS, cache_dir: str = DEFAULT_CACHE_DIR
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Recupere spot Kraken (BTC/USD), perpetuel Kraken Futures
+    (BTC/USD:BTC, PI_XBTUSD) - memes deux jambes que celles validees en
+    walk-forward a l'etape 22, meme exchange pour le SIGNAL (cf.
     docstring de btc_carry.py sur le bruit inter-exchange trouve avec
-    Binance.US+Deribit).
+    Binance.US+Deribit) - et spot OKX (BTC/USDT) pour l'EXECUTION reelle
+    de la jambe spot (etape 22 octies, moins cher).
+
+    Renvoie (signal_spot, signal_perp, exec_spot) - tous trois alignes
+    sur le MEME index (intersection des trois).
 
     Fix reseau necessaire dans CET environnement proxifie, applique ICI
     (au point d'appel, pas dans data.py:build_exchange - meme convention
@@ -73,12 +87,18 @@ def fetch_btc_spot_and_perp(history_days: int = HISTORY_DAYS, cache_dir: str = D
     perp_feed = CCXTDataFeed(exchange_id="krakenfutures", cache_dir=cache_dir, exchange_client=kraken_fut)
     perp_df = perp_feed.get_history("BTC/USD:BTC", "1d", history_days=history_days)
 
-    spot = spot_df["close"].groupby(spot_df.index.floor("D")).last()
-    perp = perp_df["close"].groupby(perp_df.index.floor("D")).last()
-    common = spot.index.intersection(perp.index).sort_values()
+    okx_spot = ccxt.okx({"enableRateLimit": True, "timeout": 20000})
+    okx_spot.session.trust_env = True
+    exec_spot_feed = CCXTDataFeed(exchange_id="okx", cache_dir=cache_dir, exchange_client=okx_spot)
+    exec_spot_df = exec_spot_feed.get_history("BTC/USDT", "1d", history_days=history_days)
+
+    signal_spot = spot_df["close"].groupby(spot_df.index.floor("D")).last()
+    signal_perp = perp_df["close"].groupby(perp_df.index.floor("D")).last()
+    exec_spot = exec_spot_df["close"].groupby(exec_spot_df.index.floor("D")).last()
+    common = signal_spot.index.intersection(signal_perp.index).intersection(exec_spot.index).sort_values()
     if len(common) == 0:
-        raise RuntimeError("Aucun jour commun entre le spot et le perpetuel Kraken recuperes")
-    return spot.reindex(common), perp.reindex(common)
+        raise RuntimeError("Aucun jour commun entre le spot Kraken, le perpetuel Kraken et le spot OKX recuperes")
+    return signal_spot.reindex(common), signal_perp.reindex(common), exec_spot.reindex(common)
 
 
 def _last_run_path(state_dir: str) -> str:
@@ -136,22 +156,29 @@ def run_daily_step(
     config: BTCCarryConfig = DEFAULT_CONFIG,
     spot: Optional[pd.Series] = None,
     perp: Optional[pd.Series] = None,
+    exec_spot: Optional[pd.Series] = None,
 ) -> dict:
-    """Execute UNE iteration du bot : recupere spot+perpetuel, met a jour
-    l'equity avec le rendement realise de la position DEJA DETENUE
-    (decidee hier), decide la nouvelle position cible (basis d'aujourd'hui,
-    bande sans-trade contre la position actuelle), persiste l'etat.
+    """Execute UNE iteration du bot : recupere spot+perpetuel (signal) et
+    le spot d'execution (etape 22 octies), met a jour l'equity avec le
+    rendement REEL REALISE de la position DEJA DETENUE (decidee hier),
+    decide la nouvelle position cible (basis d'aujourd'hui, bande
+    sans-trade contre la position actuelle), persiste l'etat.
 
-    `spot`/`perp` : injection pour les tests (evite un vrai appel reseau) -
-    None (defaut) declenche fetch_btc_spot_and_perp() normalement.
+    `spot`/`perp`/`exec_spot` : injection pour les tests (evite un vrai
+    appel reseau) - None (defaut, sur TOUS les trois) declenche
+    fetch_btc_spot_and_perp() normalement. `exec_spot` par defaut =
+    `spot` (meme venue pour signal et execution, comportement d'origine)
+    si seul `exec_spot` est omis mais `spot`/`perp` sont fournis.
 
     Idempotent si deja execute pour la derniere date disponible (meme
     convention que gold_paper_bot.run_daily_step).
     """
     os.makedirs(state_dir, exist_ok=True)
 
-    if spot is None or perp is None:
-        spot, perp = fetch_btc_spot_and_perp()
+    if spot is None or perp is None or exec_spot is None:
+        spot, perp, exec_spot = fetch_btc_spot_and_perp()
+    if exec_spot is None:
+        exec_spot = spot
 
     last_date = spot.index[-1]
     last_date_str = last_date.date().isoformat()
@@ -163,10 +190,12 @@ def run_daily_step(
     prev_position = float(state["prev_position"])
     cash_equity = float(state["cash_equity"])
 
-    # Rendement du spread REALISE depuis la derniere cloture (applique a la
-    # position DEJA DETENUE, decidee lors de l'execution precedente - aucune
-    # fuite vers le futur, la position d'aujourd'hui n'est decidee qu'apres).
-    spread_return_today = float(perp.pct_change().iloc[-1] - spot.pct_change().iloc[-1])
+    # Rendement du spread REELLEMENT REALISE (jambe spot au prix OKX,
+    # jambe perpetuel au prix Kraken) depuis la derniere cloture, applique
+    # a la position DEJA DETENUE, decidee lors de l'execution precedente -
+    # aucune fuite vers le futur, la position d'aujourd'hui n'est decidee
+    # qu'apres.
+    spread_return_today = float(perp.pct_change().iloc[-1] - exec_spot.pct_change().iloc[-1])
     if not pd.notna(spread_return_today):
         spread_return_today = 0.0
     equity_after_move = cash_equity * (1 + prev_position * spread_return_today)
@@ -207,6 +236,7 @@ def run_daily_step(
             "date": last_date_str,
             "spot_close": float(spot.iloc[-1]),
             "perp_close": float(perp.iloc[-1]),
+            "exec_spot_close": float(exec_spot.iloc[-1]),
             "basis_bps": float((perp.iloc[-1] / spot.iloc[-1] - 1) * 10000),
             "trading_allowed": allowed,
             "prev_position": prev_position,
@@ -221,6 +251,7 @@ def run_daily_step(
         "date": last_date_str,
         "spot_close": float(spot.iloc[-1]),
         "perp_close": float(perp.iloc[-1]),
+        "exec_spot_close": float(exec_spot.iloc[-1]),
         "trading_allowed": allowed,
         "prev_position": prev_position,
         "new_position": new_position,

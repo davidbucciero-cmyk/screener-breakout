@@ -215,8 +215,16 @@ class CCXTDataFeed:
             cursor = next_cursor
             if until_ms is not None and cursor >= until_ms:
                 break
-            if len(batch) < limit:
-                # Moins de bougies que demande = on a atteint le present.
+            now_ms = int(time.time() * 1000)
+            if cursor >= now_ms - tf_ms:
+                # On a rattrape le present (derniere bougie disponible).
+                # PAS `len(batch) < limit` (ancien garde-fou, etape 22
+                # septies) : certains exchanges (OKX, confirme) plafonnent
+                # chaque appel bien en-dessous du `limit` demande (100
+                # au lieu de 720) independamment de la profondeur
+                # d'historique encore disponible - ce garde-fou arretait
+                # la pagination apres quelques mois alors que des annees
+                # de donnees restaient a recuperer.
                 break
             if getattr(self.exchange, "rateLimit", None):
                 time.sleep(self.exchange.rateLimit / 1000)

@@ -152,3 +152,51 @@ def test_no_trade_band_reduces_turnover():
         return count
 
     assert n_trades(no_trade_band=0.5) < n_trades(no_trade_band=0.0)
+
+
+def test_exec_spot_none_reproduces_same_venue_behavior():
+    # exec_spot=None (defaut) doit redonner EXACTEMENT le meme resultat
+    # que passer exec_spot=spot explicitement - garde-fou de non-
+    # regression pour le comportement d'origine (signal et execution sur
+    # le meme exchange).
+    rng = np.random.default_rng(6)
+    n = 150
+    idx = _index(n)
+    spot = pd.Series(100.0 * np.cumprod(1 + rng.normal(0, 0.01, n)), index=idx)
+    perp = spot * (1 + rng.normal(0, 0.001, n))
+    cfg = BTCCarryConfig(vol_threshold_bps=0.0, no_trade_band=0.0)
+
+    eq_default = carry_spread_equity(spot, perp, cfg)
+    eq_explicit = carry_spread_equity(spot, perp, cfg, exec_spot=spot)
+    pd.testing.assert_series_equal(eq_default, eq_explicit)
+
+
+def test_exec_spot_different_venue_changes_realized_pnl_not_the_signal():
+    # Le SIGNAL (quand/combien trader) doit continuer a dependre de `spot`
+    # (Kraken), pas de `exec_spot` (OKX) - seul le P&L REALISE de la jambe
+    # spot doit changer. Construit un cas ou exec_spot diverge nettement
+    # de spot sur les rendements (meme niveau de prix, trajectoire
+    # differente) et verifie que l'equity change bien, sans planter.
+    rng = np.random.default_rng(7)
+    n = 150
+    idx = _index(n)
+    spot = pd.Series(100.0 * np.cumprod(1 + rng.normal(0, 0.01, n)), index=idx)
+    perp = spot * (1 + rng.normal(0, 0.001, n))
+    exec_spot = pd.Series(100.0 * np.cumprod(1 + rng.normal(0, 0.012, n)), index=idx)  # autre trajectoire, meme index
+    cfg = BTCCarryConfig(vol_threshold_bps=0.0, no_trade_band=0.0)
+
+    eq_same_venue = carry_spread_equity(spot, perp, cfg)
+    eq_hybrid = carry_spread_equity(spot, perp, cfg, exec_spot=exec_spot)
+
+    assert not eq_same_venue.equals(eq_hybrid)
+    assert not eq_hybrid.isna().any()
+
+
+def test_exec_spot_misaligned_index_raises():
+    idx = _index(100)
+    spot = pd.Series(100.0, index=idx)
+    perp = pd.Series(100.0, index=idx)
+    exec_spot_wrong_index = pd.Series(100.0, index=_index(90))  # fenetre differente
+
+    with pytest.raises(ValueError):
+        carry_spread_equity(spot, perp, BTCCarryConfig(), exec_spot=exec_spot_wrong_index)

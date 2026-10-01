@@ -32,6 +32,38 @@ def teardown_function(_fn):
         shutil.rmtree(CACHE_DIR)
 
 
+class _CappedFakeExchange(FakeExchange):
+    """Comme FakeExchange, mais plafonne chaque reponse a `hard_cap`
+    bougies QUEL QUE SOIT le `limit` demande par l'appelant - reproduit
+    le comportement reel d'OKX (confirme : limite ~100/appel, ignore un
+    `limit=720` demande) qui a fait decouvrir le bug de l'etape 22
+    septies (le garde-fou `len(batch) < limit` prenait ce plafond pour
+    "on a atteint le present" et arretait la pagination des annees trop
+    tot)."""
+
+    def __init__(self, all_rows, hard_cap: int):
+        super().__init__(all_rows)
+        self.hard_cap = hard_cap
+
+    def fetch_ohlcv(self, symbol: str, timeframe: str, since: int, limit: int) -> list:
+        return super().fetch_ohlcv(symbol, timeframe, since, min(limit, self.hard_cap))
+
+
+def test_get_history_continues_past_an_exchange_enforced_batch_cap():
+    # Historique bien plus long que le plafond par appel (50) ET que le
+    # `limit` par defaut de _fetch_ohlcv_paginated (720) - si le vieux
+    # garde-fou `len(batch) < limit` etait encore la, la pagination
+    # s'arreterait au bout du premier lot de 50 bougies.
+    n = 500
+    rows = generate_synthetic_ohlcv(n, timeframe_seconds=86400, seed=11)
+    fake_exchange = _CappedFakeExchange(rows, hard_cap=50)
+
+    feed = CCXTDataFeed(exchange_id="kraken", cache_dir=CACHE_DIR, exchange_client=fake_exchange)
+    df = feed.get_history("BTC/USD", "1d", history_days=n)
+
+    assert len(df) == n
+
+
 def test_get_history_paginates_and_caches():
     n = 2000  # > limite de pagination (720) pour forcer plusieurs appels
     rows = generate_synthetic_ohlcv(n, timeframe_seconds=3600, seed=42)

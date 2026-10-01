@@ -79,7 +79,7 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 21 - 14 blocs quant independants (`advanced_signals.py` : GARCH, HMM, cointegration, carry, facteurs macro, option implicite, divergence KL/JS, agregation bayesienne, VWAP approxime, parite des risques, ML regularise) + test SPA (Hansen 2005, `metrics.py`) pour corriger le data-snooping d'une recherche combinatoire
 - [x] Etape 21 bis - Recherche combinatoire walk-forward sur 12 blocs x 2 methodes de fusion (8192 configs/fold) - 2 bugs majeurs trouves et corriges (lookahead, artefact d'echelle GLD/once) ; `cash_carry` robuste seul mais echoue au test SPA une fois la recherche massive prise en compte
 - [x] Etape 21 ter/quater - Amelioration du bloc `cash_and_carry_consistency` (taux court terme, echeance dynamique, proxy spot ensemble GLD+IAU+SGOL, lease rate documente comme non-corrigeable) puis test d'un **spread neutre au marche** (long/short) plutot qu'un signal directionnel - seul resultat de la session a passer le test SPA sur 5/6 folds, mais necessite une infra de vente a decouvert absente du projet
-- [x] Etape 22 - Pivot vers le **carry BTC** (`btc_carry.py`, `btc_carry_paper_bot.py`) suite a l'etude d'un repo GitHub de cash-and-carry BTC - bug reseau ccxt generalise (Kraken Futures/Deribit accessibles), bruit inter-exchange diagnostique (Binance.US+Deribit ecarte au profit de Kraken seul), fold calme diagnostique et corrige par une porte de volatilite + une bande sans-trade (OOS Sharpe 3 folds : 0.84 -> 1.62 -> 1.82), futures trimestriels testes puis explicitement ECARTES (illiquidite ~150000x-3000000x vs le perpetuel, Sharpe 3.86/SPA p=0.000 identifie comme un artefact de donnees) - bot de paper trading deploye (Routine quotidienne), PAPER TRADING UNIQUEMENT
+- [x] Etape 22 - Pivot vers le **carry BTC** (`btc_carry.py`, `btc_carry_paper_bot.py`) suite a l'etude d'un repo GitHub de cash-and-carry BTC - bug reseau ccxt generalise (Kraken Futures/Deribit/OKX accessibles), bruit inter-exchange diagnostique (Binance.US+Deribit ecarte au profit de Kraken seul), fold calme diagnostique et corrige par une porte de volatilite + une bande sans-trade, futures trimestriels Kraken ECARTES (illiquidite ~150000x-3000000x vs le perpetuel), **modele de cout corrige** (spot Kraken 5-8x plus cher que son Futures, Sharpe 1.82->0.94), minimiser le turnover ECARTE (bug de timing corrige, toujours pire que le couple), 7 exchanges alternatifs verifies (aucun ne bat Kraken, OKX seul est pire - marche trop efficient), **execution hybride retenue** (signal Kraken + spot execute sur OKX, bruit cross-exchange reellement modelise, Sharpe OOS 1.30) - bot de paper trading deploye (Routine quotidienne), PAPER TRADING UNIQUEMENT
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -1349,19 +1349,115 @@ que l'invalidation Polymarket par le vrai carnet d'ordres, plus tot
 dans la session). Seul le perpetuel est utilisable en pratique sur
 Kraken.
 
+### Etape 22 sexies - Minimiser le turnover de la jambe spot : teste et ECARTE
+
+Suite a la question "comment ameliorer" le Sharpe corrige (0.94), piste
+testee avant l'exchange alternatif : au lieu de rebalancer les deux
+jambes ensemble (meme bande sans-trade des deux cotes), decoupler leur
+rythme - bande ETROITE sur le futures (bon marche, suit le signal de
+pres) et bande LARGE sur le spot (cher, bouge rarement). Un bug de
+timing trouve et corrige pendant la construction (la premiere version
+appliquait le rendement du jour avec la quantite de la veille plutot que
+celle tout juste decidee - verifie par un test de non-regression :
+bandes identiques des deux cotes doit redonner EXACTEMENT le backtest
+couple d'origine).
+
+**Resultat, bug corrige : OOS Sharpe 0.48 - PIRE que le couple (0.94).**
+Diagnostic : decoupler les deux jambes cree une exposition nette
+TEMPORAIRE au prix du BTC lui-meme (pas juste au basis) des que l'une
+rebalance sans l'autre - et le BTC bouge ~1%/jour contre ~0.18%/jour
+pour le spread, donc ce bruit directionnel coute plus cher que les
+frais economises. Confirme par les Sharpe train qui s'effondrent en
+test (2.92->1.08, 2.22->-0.40) - signe d'instabilite, pas d'edge
+supplementaire. Piste fermee.
+
+### Etape 22 septies - Chercher un exchange moins cher : OKX entier, puis 6 autres
+
+**OKX entierement (signal + execution)** : walk-forward complet sur
+2100 jours (2021-2026, bien plus profond que Kraken - 5.75 ans contre
+2 ans). Sharpe BRUT excellent (5.58, signal encore plus propre que
+Kraken), mais **Sharpe NET catastrophique (-17.5)** : le basis OKX a un
+ecart-type glissant median de seulement 1.45bps (contre ~14bps Kraken) -
+OKX est un marche tellement arbitre que la dispersion exploitable est
+minuscule, et meme un cout "bas" (12bps) la detruit entierement. Lecon
+generale : un exchange moins cher n'aide QUE si l'opportunite ne retrecit
+pas plus vite que les frais ne baissent - ici l'efficience du marche (qui
+cause a la fois ses frais bas ET son basis etroit) tue l'edge plus qu'elle
+ne le preserve.
+
+**6 autres exchanges verifies** (Bitget, HTX, Bitfinex, MEXC, BingX,
+Gate.io - Binance/Bybit bloques depuis cet environnement) : AUCUN ne bat
+Kraken. Meme Bitfinex (le basis le plus large du lot, 5.16bps) a un
+ratio cout/edge pire que Kraken (20bps pour 5.16bps de dispersion,
+contre 18bps pour ~14bps chez Kraken). Les autres (0.95-2.94bps de
+basis) sont soit chers ET etroits (Bitget/HTX/Gate, ~22bps), soit bon
+marche mais tout aussi etroits qu'OKX (MEXC, BingX). Kraken reste le
+seul marche identifie avec un vrai edge - pas malgre ses frais plus
+eleves, mais parce que son Futures, plus petit/moins liquide que ses
+pairs, laisse une dispersion reelle que les marches plus efficients
+n'ont plus.
+
+**Bug generique trouve et corrige au passage** (`data.py`) : le
+garde-fou `len(batch) < limit` dans `CCXTDataFeed._fetch_ohlcv_paginated`
+supposait que "moins de bougies que demande = on a atteint le present" -
+faux pour OKX, qui plafonne chaque appel a ~100 bougies quel que soit le
+`limit=720` demande, arretant la pagination au bout de quelques mois
+meme quand des annees d'historique restent disponibles. Corrige en
+comparant le curseur au temps reel (`now_ms`) plutot qu'a la taille du
+dernier lot - test de non-regression dedie
+(`test_get_history_continues_past_an_exchange_enforced_batch_cap`).
+
+### Etape 22 octies - Execution hybride : signal Kraken, spot execute sur OKX
+
+Le levier qui marche vraiment : garder le SIGNAL sur Kraken (le seul
+marche avec un edge reel, etape 22 septies) mais executer la jambe SPOT
+sur OKX (moins cher, 10bps maker contre 16bps Kraken) tout en gardant le
+futures sur Kraken (deja le moins cher trouve, 2bps).
+
+**Verification critique avant d'implementer** (demandee explicitement
+par l'utilisateur - "est-ce que ca a du sens vu ce qu'on vient de
+decouvrir ?") : la premiere estimation (Sharpe 1.30) supposait a tort
+une execution au prix EXACT de Kraken avec juste un tarif OKX - fictif.
+Mesure de l'ecart REEL OKX-spot vs Kraken-spot : ecart-type ~5.8bps/jour
+- environ 40% de l'amplitude du signal Kraken (14bps/jour) qu'on essaie
+d'exploiter, donc un risque reel, pas negligeable a priori. Walk-forward
+refait avec le VRAI rendement d'execution OKX (pas le rendement Kraken
+suppose) : **Sharpe OOS 1.298** - quasi identique a l'estimation
+initiale (1.30). Le bruit cross-exchange ne detruit pas l'edge, en
+grande partie parce que la porte de volatilite et la bande sans-trade
+laissent la strategie plate une bonne partie du temps - le bruit OKX/
+Kraken ne s'applique qu'aux periodes ou une position est reellement
+ouverte.
+
+| Approche | Round-trip | Sharpe OOS (3 folds) |
+|---|---|---|
+| Kraken seul (signal + execution) | 18bps | 0.94 |
+| Bandes decouplees (minimiser turnover) | 12-18bps variable | 0.48 |
+| OKX entier (signal + execution) | 12bps | tres negatif (-17.5 plein historique) |
+| **Hybride OKX-spot / Kraken-perp+signal (retenu)** | **12bps** | **1.30** |
+
+`btc_carry.carry_spread_equity` prend desormais un parametre optionnel
+`exec_spot` : le SIGNAL (z-score) continue d'utiliser `spot` (Kraken),
+mais le P&L REALISE de la jambe spot utilise `exec_spot` (OKX) si
+fourni - `None` (defaut) reproduit exactement le comportement d'origine
+(meme venue des deux cotes). `BTCCarryConfig.spot_fee_bps` par defaut
+passe a 10.0 (maker OKX).
+
 ### Code et deploiement
 
 - **`btc_carry.py`** : `basis_bps`, `basis_zscore`, `basis_vol_gate`,
-  `carry_spread_equity` (le backtest complet) - `BTCCarryConfig`
-  dataclass pour les hyperparametres. 7 tests (`test_btc_carry.py`).
+  `carry_spread_equity` (le backtest complet, parametre optionnel
+  `exec_spot` pour l'execution hybride) - `BTCCarryConfig` dataclass pour
+  les hyperparametres. 10 tests (`test_btc_carry.py`).
 - **`btc_carry_paper_bot.py`** : bot de paper trading, meme philosophie
   que `gold_paper_bot.py` (etape 18) mais reimplemente le pas-a-pas en
   INCREMENTAL (etat persiste jour par jour) plutot qu'en un seul passage
   vectorise, car `LiveExecutor` (etape 6) ne modelise que des positions
   longues sur un symbole unique - pas adapte a un spread a deux jambes.
-  N'utilise PAS LiveExecutor. Journal quotidien append-only
+  N'utilise PAS LiveExecutor. Recupere desormais trois series (signal
+  Kraken spot+perp, execution OKX spot). Journal quotidien append-only
   (`daily_log.csv` - `position.json` n'est qu'un instantane ecrase
-  chaque jour, insuffisant pour suivre l'equity dans le temps). 7 tests
+  chaque jour, insuffisant pour suivre l'equity dans le temps). 8 tests
   (`test_btc_carry_paper_bot.py`).
 - **Routine quotidienne creee et activee** ("BTC carry paper bot -
   execution quotidienne", 00:15 UTC - apres la cloture de la bougie
@@ -1372,7 +1468,9 @@ Kraken.
   decouvert (absente du projet) - Kraken Futures la supporte nativement
   (pas d'emprunt de titres comme pour un ETF or), donc c'est desormais
   un chantier d'EXECUTION plutot qu'un obstacle structurel, mais
-  toujours un chantier separe, non entame.
+  toujours un chantier separe, non entame. L'execution hybride (spot sur
+  OKX) ajouterait un deuxieme compte/cles API au passage au reel -
+  documente mais non implemente (ce module reste paper).
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 

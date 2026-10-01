@@ -22,6 +22,21 @@ sont pas des prix de marche fiables (un Sharpe backtest ~4-5 sur les
 trimestriels s'est revele etre un artefact d'illiquidite, pas un edge
 reel).
 
+Execution HYBRIDE (etape 22 octies) : le SIGNAL (z-score du basis) reste
+calcule sur Kraken (spot+perpetuel) - c'est le marche le moins efficient
+parmi 8 exchanges verifies (ecart-type du basis ~14bps/jour contre
+0.95-5.16bps sur Bitget/HTX/Bitfinex/MEXC/BingX/Gate.io et ~3.2bps sur
+OKX - un marche moins liquide laisse plus de dispersion reelle a
+exploiter, et c'est independant de ses frais). Mais la jambe SPOT
+s'execute sur OKX (`exec_spot`), moins cher que le spot classique Kraken
+(10bps maker contre 16bps) - verifie que le bruit introduit (ecart-type
+OKX-spot vs Kraken-spot ~5.8bps/jour) ne detruit pas l'edge une fois
+correctement modelise (rendement REEL d'execution OKX, pas le rendement
+Kraken suppose a tort) : OOS Sharpe walk-forward 1.30 (contre 0.94 sans
+hybride), quasi identique a l'estimation initiale qui ignorait ce bruit
+- confirme que l'edge survit au passage a une execution reelle sur un
+second exchange.
+
 Limites assumees (detaillees dans README.md, etape 22) :
 - Fenetre reelle ~2 ans seulement : l'API publique Kraken (spot ET
   futures) plafonne a ~720-ish bougies quel que soit `since` demande
@@ -57,19 +72,21 @@ class BTCCarryConfig:
     vol_threshold_bps: float = 12.0
     vol_gate_window: int = 20
     no_trade_band: float = 0.5
-    # Frais reels verifies separement par jambe (etape 22 quinquies) - PAS le
-    # meme taux des deux cotes : Kraken Futures (PI_XBTUSD) facture 0.02%
-    # maker / 0.05% taker, mais le Kraken SPOT CLASSIQUE facture 0.16%
-    # maker / 0.26% taker - 5x plus cher. Une premiere version de ce module
-    # appliquait a tort le taux futures aux DEUX jambes (round-trip modelise
-    # a 10bps) - corrige : round-trip reel = spot_fee + perp_fee.
-    # Defauts = MAKER des deux cotes (18bps round-trip) car c'est le SEUL
-    # regime qui reste rentable (Sharpe walk-forward ~0.49, contre -1.85 en
-    # taker/taker a 31bps) - voir README etape 22 quinquies pour le detail
-    # par scenario. Le bot de paper trading ne genere jamais d'ordre reel,
-    # donc ce choix documente surtout la condition de viabilite d'un futur
-    # passage au reel, pas un comportement observe.
-    spot_fee_bps: float = 16.0
+    # Frais reels verifies separement par jambe (etape 22 quinquies/octies) -
+    # PAS le meme taux des deux cotes : Kraken Futures (PI_XBTUSD) facture
+    # 0.02% maker / 0.05% taker, mais le Kraken SPOT CLASSIQUE facture
+    # 0.16% maker / 0.26% taker - 5x plus cher. Une premiere version de ce
+    # module appliquait a tort le taux futures aux DEUX jambes (round-trip
+    # modelise a 10bps) - corrige : round-trip reel = spot_fee + perp_fee.
+    # Defaut `spot_fee_bps=10.0` = tarif maker OKX (etape 22 octies,
+    # execution hybride) : moins cher que le maker Kraken (16bps) sans
+    # degrader l'edge une fois le bruit OKX/Kraken reellement modelise
+    # (voir `exec_spot` dans `carry_spread_equity`). `perp_fee_bps` reste
+    # sur Kraken Futures (2bps), deja le moins cher trouve. Le bot de
+    # paper trading ne genere jamais d'ordre reel, donc ces defauts
+    # documentent surtout la condition de viabilite d'un futur passage au
+    # reel, pas un comportement observe.
+    spot_fee_bps: float = 10.0
     perp_fee_bps: float = 2.0
 
 
@@ -103,11 +120,24 @@ def basis_vol_gate(spot: pd.Series, perp: pd.Series, vol_threshold_bps: float, w
     return (recent_vol > vol_threshold_bps).astype(float)
 
 
-def carry_spread_equity(spot: pd.Series, perp: pd.Series, config: BTCCarryConfig = BTCCarryConfig()) -> pd.Series:
+def carry_spread_equity(
+    spot: pd.Series,
+    perp: pd.Series,
+    config: BTCCarryConfig = BTCCarryConfig(),
+    exec_spot: pd.Series | None = None,
+) -> pd.Series:
     """Backtest du spread neutre au marche (long spot/short perpetuel ou
     l'inverse selon le signe du basis). `spot` et `perp` doivent partager
     le meme index (deja aligne par l'appelant - voir
     `crypto_quant/data.py:CCXTDataFeed` pour la recuperation).
+
+    `exec_spot` (optionnel, etape 22 octies) : serie de prix spot
+    DIFFERENTE de `spot` pour l'execution reelle de cette jambe (ex. OKX
+    plutot que Kraken) - le SIGNAL (z-score) continue d'utiliser `spot`
+    (Kraken, le marche le moins efficient trouve, donc le vrai edge), mais
+    le P&L realise de la jambe spot utilise `exec_spot`. None (defaut) =
+    meme serie des deux cotes (comportement d'origine, execution et
+    signal sur le meme exchange).
 
     Position = exposition continue bornee a [-1,1] proportionnelle a
     -z/clip_z (pas un seuil+levier cible de vol - une premiere version
@@ -117,6 +147,9 @@ def carry_spread_equity(spot: pd.Series, perp: pd.Series, config: BTCCarryConfig
     rebalance que si l'exposition cible s'ecarte de la position courante
     de plus que `no_trade_band` - reduit le turnover de dithering
     quotidien ~7x sans detruire l'edge, etape 22 ter)."""
+    exec_spot = spot if exec_spot is None else exec_spot
+    if not exec_spot.index.equals(spot.index):
+        raise ValueError("exec_spot doit partager exactement le meme index que spot (deja aligne par l'appelant)")
     z = basis_zscore(spot, perp, config.z_window)
     gate = (
         basis_vol_gate(spot, perp, config.vol_threshold_bps, config.vol_gate_window)
@@ -124,7 +157,7 @@ def carry_spread_equity(spot: pd.Series, perp: pd.Series, config: BTCCarryConfig
         else 1.0
     )
     target_exposure = (-z.clip(-config.clip_z, config.clip_z) / config.clip_z).clip(-1, 1) * gate
-    spread_return = perp.pct_change() - spot.pct_change()
+    spread_return = perp.pct_change() - exec_spot.pct_change()
     target = target_exposure.shift(1).fillna(0.0)
 
     # Round-trip = somme des DEUX frais reels (pas le meme taux double -

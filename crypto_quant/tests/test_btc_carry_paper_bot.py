@@ -23,7 +23,11 @@ def _spot_perp(n=100, seed=1, spike_at=None, spike_bps=80.0):
     if spike_at is not None:
         basis[spike_at] = spike_bps
     perp = spot * (1 + basis / 10000)
-    return spot, perp
+    # exec_spot (etape 22 octies) : meme venue que `spot` par defaut dans
+    # ces tests (pas de bruit d'execution ajoute, sauf test dedie) - la
+    # plupart des tests verifient la mecanique du bot, pas le hybride.
+    exec_spot = spot.copy()
+    return spot, perp, exec_spot
 
 
 def _light_cfg(**overrides):
@@ -33,8 +37,8 @@ def _light_cfg(**overrides):
 
 
 def test_run_daily_step_basic_execution(tmp_path):
-    spot, perp = _spot_perp()
-    result = run_daily_step(state_dir=str(tmp_path), config=_light_cfg(), spot=spot, perp=perp)
+    spot, perp, exec_spot = _spot_perp()
+    result = run_daily_step(state_dir=str(tmp_path), config=_light_cfg(), spot=spot, perp=perp, exec_spot=exec_spot)
 
     assert result["status"] == "execute"
     assert result["equity"] > 0
@@ -46,36 +50,37 @@ def test_run_daily_step_basic_execution(tmp_path):
 
 
 def test_daily_log_accumulates_one_row_per_executed_day(tmp_path):
-    spot, perp = _spot_perp(n=60, spike_at=40)
+    spot, perp, exec_spot = _spot_perp(n=60, spike_at=40)
     cfg = _light_cfg()
 
-    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp)
+    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp, exec_spot=exec_spot)
     log_df = pd.read_csv(os.path.join(tmp_path, "daily_log.csv"))
     assert len(log_df) == 1
     assert list(log_df.columns) == [
-        "date", "spot_close", "perp_close", "basis_bps", "trading_allowed", "prev_position", "new_position", "turnover", "equity",
+        "date", "spot_close", "perp_close", "exec_spot_close", "basis_bps", "trading_allowed", "prev_position", "new_position", "turnover", "equity",
     ]
 
     new_idx = spot.index[-1] + pd.Timedelta(days=1)
     spot2 = pd.concat([spot, pd.Series([float(spot.iloc[-1]) * 1.005], index=[new_idx])])
     perp2 = pd.concat([perp, pd.Series([float(perp.iloc[-1]) * 0.998], index=[new_idx])])
-    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2)
+    exec_spot2 = pd.concat([exec_spot, pd.Series([float(exec_spot.iloc[-1]) * 1.005], index=[new_idx])])
+    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2, exec_spot=exec_spot2)
 
     log_df2 = pd.read_csv(os.path.join(tmp_path, "daily_log.csv"))
     assert len(log_df2) == 2  # une ligne de plus, pas ecrasee
 
     # Rejouer le meme jour (idempotent) ne doit RIEN ajouter au journal.
-    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2)
+    run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2, exec_spot=exec_spot2)
     log_df3 = pd.read_csv(os.path.join(tmp_path, "daily_log.csv"))
     assert len(log_df3) == 2
 
 
 def test_run_daily_step_is_idempotent_for_same_date(tmp_path):
-    spot, perp = _spot_perp()
+    spot, perp, exec_spot = _spot_perp()
     cfg = _light_cfg()
 
-    first = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp)
-    second = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp)
+    first = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp, exec_spot=exec_spot)
+    second = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp, exec_spot=exec_spot)
 
     assert first["status"] == "execute"
     assert second["status"] == "deja_a_jour"
@@ -89,9 +94,9 @@ def test_run_daily_step_never_trades_on_the_very_first_call():
     # ete REALISE avant cette toute premiere execution.
     import tempfile
 
-    spot, perp = _spot_perp()
+    spot, perp, exec_spot = _spot_perp()
     with tempfile.TemporaryDirectory() as d:
-        result = run_daily_step(state_dir=d, config=_light_cfg(), spot=spot, perp=perp)
+        result = run_daily_step(state_dir=d, config=_light_cfg(), spot=spot, perp=perp, exec_spot=exec_spot)
     # Le compte part du capital initial, le premier rendement realise doit
     # etre nul puisque prev_position=0 au tout premier appel (pas de P&L
     # sans position deja ouverte) - seul un cout de turnover (entree en
@@ -100,18 +105,19 @@ def test_run_daily_step_never_trades_on_the_very_first_call():
 
 
 def test_run_daily_step_persists_equity_and_position_across_two_days(tmp_path):
-    spot, perp = _spot_perp(n=60, spike_at=40)
+    spot, perp, exec_spot = _spot_perp(n=60, spike_at=40)
     cfg = _light_cfg(no_trade_band=0.0)
 
-    day1 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp)
+    day1 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp, exec_spot=exec_spot)
 
     # Jour suivant : une bougie de plus sur les deux jambes.
     rng = np.random.default_rng(99)
     new_idx = spot.index[-1] + pd.Timedelta(days=1)
     spot2 = pd.concat([spot, pd.Series([float(spot.iloc[-1]) * 1.005], index=[new_idx])])
     perp2 = pd.concat([perp, pd.Series([float(perp.iloc[-1]) * 0.998], index=[new_idx])])  # le perp retombe (convergence)
+    exec_spot2 = pd.concat([exec_spot, pd.Series([float(exec_spot.iloc[-1]) * 1.005], index=[new_idx])])
 
-    day2 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2)
+    day2 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2, exec_spot=exec_spot2)
 
     assert day2["status"] == "execute"
     assert day2["prev_position"] == day1["new_position"]  # l'etat d'hier a bien ete recharge
@@ -123,9 +129,9 @@ def test_run_daily_step_persists_equity_and_position_across_two_days(tmp_path):
 
 def test_run_daily_step_forces_flat_when_circuit_breaker_halts(tmp_path):
     cfg = _light_cfg(clip_z=1.0)  # exposition agressive pour ouvrir une grosse position facilement
-    spot, perp = _spot_perp(n=60, spike_at=40, spike_bps=150.0)
+    spot, perp, exec_spot = _spot_perp(n=60, spike_at=40, spike_bps=150.0)
 
-    day1 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp)
+    day1 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp, exec_spot=exec_spot)
     assert day1["new_position"] != 0.0  # precondition : une position est ouverte
 
     # Jour suivant : mouvement du perpetuel qui PENALISE la position
@@ -136,11 +142,34 @@ def test_run_daily_step_forces_flat_when_circuit_breaker_halts(tmp_path):
     adverse_move_sign = -1.0 if day1["new_position"] > 0 else 1.0
     spot2 = pd.concat([spot, pd.Series([float(spot.iloc[-1])], index=[new_idx])])
     perp2 = pd.concat([perp, pd.Series([float(perp.iloc[-1]) * (1 + adverse_move_sign * 0.5)], index=[new_idx])])
+    exec_spot2 = pd.concat([exec_spot, pd.Series([float(exec_spot.iloc[-1])], index=[new_idx])])
 
-    result = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2)
+    result = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2, exec_spot=exec_spot2)
 
     assert result["trading_allowed"] is False
     assert result["new_position"] == 0.0
+
+
+def test_run_daily_step_uses_exec_spot_not_signal_spot_for_realized_pnl(tmp_path):
+    # Le P&L REALISE doit suivre exec_spot (OKX), pas spot (Kraken, le
+    # signal) - construit un cas ou les deux divergent nettement le jour 2
+    # et verifie que l'equity change en fonction d'exec_spot.
+    spot, perp, _ = _spot_perp(n=60, spike_at=40)
+    cfg = _light_cfg(no_trade_band=0.0)
+
+    day1 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot, perp=perp, exec_spot=spot.copy())
+    assert day1["new_position"] != 0.0  # precondition : une position est ouverte
+
+    new_idx = spot.index[-1] + pd.Timedelta(days=1)
+    spot2 = pd.concat([spot, pd.Series([float(spot.iloc[-1])], index=[new_idx])])  # signal spot INCHANGE
+    perp2 = pd.concat([perp, pd.Series([float(perp.iloc[-1])], index=[new_idx])])  # perp INCHANGE
+    # exec_spot bouge fortement alors que signal/perp restent plats - seul
+    # ce mouvement doit affecter le P&L realise du jour 2.
+    exec_spot2 = pd.concat([spot, pd.Series([float(spot.iloc[-1]) * 1.1], index=[new_idx])])
+
+    day2 = run_daily_step(state_dir=str(tmp_path), config=cfg, spot=spot2, perp=perp2, exec_spot=exec_spot2)
+
+    assert day2["equity"] != day1["equity"]
 
 
 def test_run_daily_step_never_sends_real_orders():
