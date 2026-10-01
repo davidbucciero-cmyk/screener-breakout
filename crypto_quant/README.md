@@ -75,6 +75,10 @@ sur les 1152 combinaisons) rend visible, ou non, le surapprentissage.
 - [x] Etape 17 bis - Or recalibre aux fenetres CTA classiques (100-250 jours, pas 12-48 jours) - le resultat OOS passe de bruit pur (Sharpe 0.006, p=0.98) a directionnellement positif (Sharpe 0.30, p=0.24-0.30) : la mauvaise calibration etait bien le probleme, pas l'or en tant que tel - toujours pas significatif a 5%
 - [x] Etape 18 - Bot de paper trading autonome sur l'or (`gold_paper_bot.py`) - execute une iteration quotidienne (config recalibree etape 17 bis), coupe-circuit inclus, PAPER TRADING UNIQUEMENT (`LiveExecutor(dry_run=True)`) ; tout l'etat (cash, positions, coupe-circuit) persiste en JSON commit/push pour survivre au conteneur ephemere
 - [x] Etape 19 - Systeme de breakout Donchian + filtre MM200 (`donchian_system.py`, propose par l'utilisateur) teste en walk-forward (10 folds) sur les memes 25 ans d'or - Sharpe OOS 0.25, p=0.23-0.43 : meme ordre de grandeur que l'ADX/EMA de l'etape 17 bis, pas une amelioration nette, jamais significatif a 5%
+- [x] Etape 20 - Univers diversifie de 15 marches futures (indices, taux, devises, matieres premieres) - bug critique trouve (prix WTI negatif le 2020-04-20, cassait Hurst/OU silencieusement) et corrige ; resultat initial semblant significatif (p=0.032) invalide par un test de robustesse (groupe A positif / groupe B negatif)
+- [x] Etape 21 - 14 blocs quant independants (`advanced_signals.py` : GARCH, HMM, cointegration, carry, facteurs macro, option implicite, divergence KL/JS, agregation bayesienne, VWAP approxime, parite des risques, ML regularise) + test SPA (Hansen 2005, `metrics.py`) pour corriger le data-snooping d'une recherche combinatoire
+- [x] Etape 21 bis - Recherche combinatoire walk-forward sur 12 blocs x 2 methodes de fusion (8192 configs/fold) - 2 bugs majeurs trouves et corriges (lookahead, artefact d'echelle GLD/once) ; `cash_carry` robuste seul mais echoue au test SPA une fois la recherche massive prise en compte
+- [x] Etape 21 ter/quater - Amelioration du bloc `cash_and_carry_consistency` (taux court terme, echeance dynamique, proxy spot ensemble GLD+IAU+SGOL, lease rate documente comme non-corrigeable) puis test d'un **spread neutre au marche** (long/short) plutot qu'un signal directionnel - seul resultat de la session a passer le test SPA sur 5/6 folds, mais necessite une infra de vente a decouvert absente du projet
 
 ## Etape 9 - Verdict decisif sur 7 ans de donnees reelles (Binance.US)
 
@@ -880,6 +884,274 @@ passage a du reel)** :
   execution reelle sur futures (marge, rollover de contrat) changerait
   fondamentalement le risque reel par rapport a ce qui est mesure ici -
   chantier separe, pas couvert par ce projet a ce stade.
+
+## Etape 20 - Univers diversifie de 15 marches futures
+
+**Contexte** : demande explicite de l'utilisateur de ne pas se precipiter
+vers le paper trading reel ("je veux d'abord trouver un edge") - test du
+meme pipeline (ADX/EMA, etape 17 bis) sur un univers bien plus large que
+l'or seul : indices actions, taux, devises, matieres premieres (15 marches
+futures `yfinance`, ex. `ES=F`, `ZN=F`, `6E=F`, `CL=F`, `SI=F`, `ZC=F`...).
+
+**Bug critique trouve** : le prix du WTI (`CL=F`) est devenu **negatif**
+le 2020-04-20 (evenement reel historique - contrats expirant sans
+acheteurs pour la livraison physique pendant le confinement COVID), ce qui
+cassait silencieusement `rolling_hurst` et `ou_meanreversion_signal`
+(toutes deux supposent implicitement des prix strictement positifs, ex.
+log-rendements). Corrige par un garde-fou explicite,
+`signals._require_positive_prices`, appele en tete des deux fonctions et
+applicable a tout le projet (pas seulement a l'or) - leve `ValueError`
+plutot que de produire silencieusement des NaN/valeurs aberrantes.
+
+**Resultat initial** sur l'univers des 15 marches, walk-forward : semblait
+statistiquement significatif (p=0.032) - mais **a echoue au test de
+robustesse** standard (scinder l'univers en deux groupes d'actifs
+independants et verifier que le signe/l'ampleur du resultat se reproduit
+dans les deux) : groupe A positif, groupe B negatif. Un resultat qui ne
+survit pas a un decoupage aussi simple de l'univers de test n'est pas un
+edge reproductible, quel que soit son p-value apparent sur l'univers
+complet - verdict honnete : **aucun edge trouve sur cet univers elargi**.
+
+## Etape 21 - 14 blocs quant independants + test SPA
+
+**Contexte** : a la demande explicite et repetee de l'utilisateur
+("je veux que tu codes chaque element independamment"), apres un
+inventaire complet de tout ce qui avait ete teste/code/evoque cette
+session (signaux, sizing, risque, validation, execution) et de tout ce qui
+manquait encore (carry, GARCH, cointegration, HMM, test SPA, facteurs
+macro, option digitale, divergence KL/JS, agregation bayesienne, parite
+des risques, ML, momentum cross-sectionnel, VWAP) - clarifie que le
+probleme (choisir la meilleure combinaison parmi une douzaine de blocs) a
+un espace combinatoire bien trop petit pour justifier l'informatique
+quantique proposee initialement par l'utilisateur (IBM Quantum) ; une
+recherche classique walk-forward suffit et reste bien plus simple a
+auditer.
+
+**`advanced_signals.py`** (nouveau module, 14 fonctions INDEPENDANTES,
+chacune testable et utilisable seule) :
+
+| Bloc | Fonction | Idee |
+|---|---|---|
+| Volatilite GARCH | `garch_volatility` | GARCH(1,1) via `arch`, filtre de regime de vol |
+| Regime HMM | `hmm_regime_signal` | Chaine de Markov cachee (Baum-Welch/EM, `hmmlearn`) a 2 etats |
+| Carry | `carry_signal` | Pente de la courbe futures (contrat proche vs suivant) |
+| Cointegration | `cointegration_spread_signal` | OLS glissant + z-score du residu (or/argent) |
+| Momentum cross-sectionnel | `cross_sectional_momentum_tilt` | Tilt relatif au sein d'un panier d'actifs correles |
+| Cash-and-carry | `cash_and_carry_consistency` | Ecart entre futures et theorique cout-de-portage (voir etapes 21 bis/ter/quater) |
+| Facteurs macro | `macro_factor_exposure` | Residu d'une regression glissante vs DXY/taux reel/VIX |
+| Probabilite implicite | `implied_probability_from_options` | Black-Scholes inverse sur une chaine d'options |
+| Divergence KL/JS | `kl_divergence`, `js_divergence`, `signal_distribution_divergence` | Dissimilarite entre distributions de signaux (lissage epsilon pour eviter la sous-estimation sur des bacs disjoints) |
+| Agregation bayesienne | `bayesian_aggregate_probabilities` | Combinaison de probabilites en log-odds (pas en probabilite brute) |
+| VWAP approxime | `daily_vwap_approx` | VWAP intra-journalier approxime depuis OHLCV quotidien |
+| Parite des risques | `risk_parity_weights`, `min_variance_weights` | Mise a jour multiplicative en racine carree (ERC), pas une substitution directe |
+| ML regularise | `ml_regularized_signal` | Regression logistique L2 (Ridge), split train/test strict |
+
+**`metrics.spa_test`** : test SPA (*Superior Predictive Ability*, Hansen
+2005) - bootstrap par blocs de la statistique MAXIMUM sur TOUTES les
+strategies testees, pas seulement la meilleure. C'est la correction
+standard du data-snooping (biais deja identifie a l'etape 18 via Baur,
+Dichtl, Drobetz & Wendt 2018) : plus on teste de combinaisons, plus il est
+facile de trouver par hasard une config qui a l'air bonne sur une periode
+donnee - le test SPA quantifie precisement ce risque plutot que de
+l'ignorer.
+
+**3 bugs reels trouves et corriges pendant la construction** (meme
+pattern que tout le reste de la session - le processus de test revele des
+bugs, pas seulement les resultats) :
+- `np.math.erf` n'existe plus en numpy 2.0 - remplace par `math.erf`
+  (module standard).
+- Divergence KL sous-estimant massivement l'ecart entre deux distributions
+  sans recouvrement (bacs a frequence nulle masques plutot que lisses) -
+  corrige par un lissage epsilon additif avant normalisation.
+- Formule iterative de parite des risques incorrecte
+  (`w * target / risk_contrib` s'annule algebriquement et converge vers
+  l'egalite des contributions MARGINALES, pas au RISQUE) - corrige en
+  `w * sqrt(target / risk_contrib)` (mise a jour multiplicative en racine,
+  type Newton), verifie par test que les contributions au risque
+  convergent bien vers l'egalite.
+
+`requirements.txt` : ajout de `arch`, `hmmlearn`, `statsmodels`.
+
+**Limite assumee explicitement sur 2 blocs** (jamais testes en pratique
+faute de donnees historiques disponibles dans ce projet) : `carry_signal`
+(demanderait un historique multi-echeances du meme contrat, pas juste le
+contrat continu actuel) et `implied_probability_from_options` (demanderait
+un historique de chaines d'options sur l'or, non disponible via
+`yfinance`).
+
+## Etape 21 bis - Recherche combinatoire walk-forward (12 blocs x 2 fusions)
+
+**Harnais de recherche** (scripts dans le scratchpad, non commites -
+`gold_combo_search.py`/`gold_combo_search2.py`) : walk-forward classique
+(6 folds, fenetre commune 2008-07-01 -> 2026-09-30, 4587 jours) sur 12 des
+14 blocs de l'etape 21 (carry et probabilite implicite exclus pour absence
+de donnees), 2 methodes de fusion (`weighted_sum` : moyenne des z-scores ;
+`bayesian` : agregation en log-odds des probabilites derivees des
+z-scores) = 2^12 - 1 = 4095 combinaisons de blocs x 2 methodes = 8190
+candidats evalues par fold, le meilleur sur TRAIN uniquement applique au
+TEST (discipline walk-forward stricte, comme tout le reste du projet).
+
+**2 bugs majeurs trouves et corriges pendant la construction du harnais**
+(l'un aurait produit un resultat extremement trompeur s'il n'avait pas ete
+detecte) :
+1. **Biais de lookahead** : le signal `macro_residual` (et plus
+   generalement le score combine) a la date *t* utilisait en partie le
+   rendement du jour *t* lui-meme dans son calcul, puis ce meme score etait
+   applique a ce rendement DEJA REALISE - resultat initial Sharpe ~5.97
+   (manifestement irrealiste). Corrige par un decalage (`shift(1)` /
+   `np.roll(..., 1)`) systematique du poids/score avant application au
+   rendement, dans `backtest_from_score()` et `_sharpe_from_weight()`.
+2. **Artefact d'echelle** dans `cash_and_carry_consistency` : GLD ($/part,
+   ~150-300$) compare en niveau absolu a GC=F ($/once, ~2000-3500$), un
+   ratio constant d'environ 10.46x dominant entierement la deviation
+   calculee (Sharpe walk-forward artefactuel ~1.42) - corrige en
+   normalisant le RATIO front/spot contre sa propre moyenne/ecart-type
+   glissants plutot qu'un niveau absolu supposant une correspondance 1:1
+   inexistante entre un ETF et un contrat futures.
+
+**Resultat (apres corrections)** :
+
+| | Recherche directionnelle (8190 candidats/fold) |
+|---|---|
+| OOS Sharpe enchaine (6 folds) | 1.415 |
+| Blocs choisis le plus souvent | `cash_carry` (seul ou combine), `ou`, `coint_silver` |
+
+`cash_carry` ressort systematiquement comme le bloc dominant. **Teste SEUL
+par fold** (controle 1, hors recherche massive) : Sharpe test 2.59 / 1.06 /
+0.94 / 1.51 / 1.98 / 2.46 - robuste en isolation sur les 6 folds. Mais
+**teste SPA sur toutes les 4095 candidates de chaque fold** (controle 2,
+corrige le data-snooping de la recherche elle-meme) : **aucun p-value
+<0.05** (0.162, 0.488, 0.584, 0.958, 0.360, 0.952) - le resultat en
+apparence solide de `cash_carry` seul ne resiste pas a la correction pour
+le nombre de combinaisons essayees. Rappel methodologique direct de Baur,
+Dichtl, Drobetz & Wendt (2018, deja cite a l'etape 18) : un signal qui a
+l'air bon avant correction SPA peut tres bien n'etre qu'un gagnant du
+hasard parmi des milliers de candidats testes.
+
+## Etape 21 ter/quater - Amelioration du cash-and-carry + spread neutre au marche
+
+**Contexte** : `cash_carry` etant le seul bloc ressortant de maniere
+repetee de la recherche (etape 21 bis), amelioration iterative explicite
+(demande utilisateur point par point) avant de l'abandonner.
+
+**Validation theorique (lecture de Hull, *Options, Futures, and Other
+Derivatives*, 11e ed., chapitre 5 - via la bibliotheque Quant-Enthusiasts,
+voir la section "Bibliotheque externe" ci-dessous)** : l'or et l'argent
+sont des *investment assets* au sens de Hull, mais avec une
+particularite - contrairement a une action ou un indice, leurs
+detenteurs (banques centrales, notamment) **percoivent un interet en les
+pretant, le *gold lease rate*** (Hull, §5.11, "Income and Storage
+Costs") : *"Gold owners such as central banks charge interest in the form
+of what is known as the gold lease rate when they lend gold... Gold and
+silver can therefore provide income to the holder."* La formule complete
+du cout de portage pour un tel actif (Hull eq. 5.17/5.19) est :
+
+```
+F0 = S0 * exp((r + u - y) * T)
+```
+
+ou `r` = taux sans risque, `u` = cout de stockage (en proportion du prix
+spot), `y` = rendement de convenance (ici, essentiellement le lease
+rate). Notre implementation (`cash_and_carry_consistency`) utilise
+`F0_theorique = S0 * exp(r * T)` - **le terme `(u - y)` est totalement
+absent**, exactement la limite qu'on avait deja identifiee
+empiriquement (absence de flux public fiable pour le lease rate de l'or
+- le taux GOFO qui l'approximait a ete arrete en 2015) avant de lire
+Hull. Cette lecture ne resout pas le probleme (toujours aucune source de
+donnees pour `y`), mais **confirme formellement, par la theorie
+canonique du cout de portage, que l'ecart qu'on a documente comme
+"non-corrigeable" est exactement celui que la litterature nomme le
+rendement de convenance** - ce n'est pas un defaut de notre modelisation,
+c'est un terme fondamentalement non observable avec les donnees
+publiques disponibles pour l'or depuis 2015.
+
+**Ameliorations apportees (points 1-5 demandes)** :
+1. **Taux court terme** (`^IRX`, bons du Tresor 13 semaines) a la place
+   de `^TNX` (10 ans) - coherent avec l'horizon court des contrats futures
+   proches, plutot qu'un taux de maturite sans rapport.
+2. **Echeance dynamique** (`days_to_futures_month_end`) plutot qu'un `T`
+   fixe - le temps jusqu'a l'expiration du contrat proche varie
+   naturellement tout au long du mois.
+3. **Proxy spot ensemble** (GLD + IAU + SGOL moyennes, plutot que GLD
+   seul) - reduit le bruit idiosyncratique propre a un seul vehicule ETF
+   (fournisseur, frais, mecanique de creation/rachat).
+4. **Lease rate** : explicitement **non resolu** - aucune source de
+   donnees publique fiable identifiee (GOFO arrete en 2015, pas
+   d'alternative gratuite trouvee) ; documente comme limite assumee du
+   bloc plutot que masque.
+5. **Spread neutre au marche** (long/short) plutot que signal
+   directionnel - voir ci-dessous, **le resultat le plus important de
+   cette section**.
+
+**Recherche directionnelle finale** (avec proxy ensemble) : quasi
+inchangee (Sharpe 1.415, meme pattern de dilution par la recherche
+massive deja observe a l'etape 21 bis - les ameliorations de QUALITE du
+bloc n'ont pas change sa significativite une fois noye dans 4095
+candidats).
+
+**Spread neutre au marche** (`gold_spread_trade.py`, scratchpad) :
+restructuration conceptuelle plutot qu'amelioration incrementale - au
+lieu d'utiliser la deviation cash-and-carry pour prendre une position
+directionnelle sur l'or (long ou flat), elle sert a prendre une position
+**dollar-neutre** : SHORT futures / LONG spot (ou l'inverse) quand
+l'ecart depasse un seuil, en paris sur sa convergence - plus proche de la
+theorie academique de l'arbitrage cash-and-carry (qui profite de la
+convergence du spread, pas du sens de l'or). Espace de recherche reduit a
+4 seuils d'entree (0.5/1.0/1.5/2.0 ecarts-types) plutot que 4095
+combinaisons de blocs.
+
+| Fold | Seuil choisi | Sharpe train | Sharpe test |
+|---|---|---|---|
+| 1 (2011-02->2013-09) | 1.0 | 1.887 | 1.663 |
+| 2 (2013-09->2016-04) | 1.5 | 1.889 | 1.666 |
+| 3 (2016-04->2018-11) | 1.5 | 1.844 | 0.961 |
+| 4 (2018-11->2021-07) | 1.5 | 1.659 | 0.997 |
+| 5 (2021-07->2024-02) | 1.5 | 1.508 | 0.661 |
+| 6 (2024-02->2026-09) | 1.5 | 1.376 | 1.184 |
+
+**Test SPA sur les 4 seuils testes, fold par fold (vs un benchmark neutre
+a 0 rendement)** :
+
+| Fold | p-value SPA |
+|---|---|
+| 1 | 0.000 |
+| 2 | 0.000 |
+| 3 | 0.006 |
+| 4 | 0.002 |
+| 5 | 0.101 |
+| 6 | 0.008 |
+
+**Passe le test SPA sur 5 des 6 folds** - le seul resultat de toute la
+session a survivre a la correction de data-snooping. Sharpe OOS enchaine
+sur les 6 folds : 1.203.
+
+**Limite assumee et majeure, qui empeche tout deploiement tel quel** :
+cette strategie necessite de **vendre a decouvert** l'un des deux
+versants (futures ou ETF) - `LiveExecutor` (etape 6) ne gere que des
+positions longues, et il n'existe aucune infrastructure de vente a
+decouvert dans ce projet (emprunt de titres, marge, cout de financement
+du short). Le resultat ci-dessus est une **exploration statistique de
+l'idee**, pas une strategie deployable telle quelle. Decision explicite
+de l'utilisateur en attente : construire cette infrastructure (chantier
+non trivial - gestion de marge, frais d'emprunt, risque de rappel de
+titres) ou documenter ce resultat comme une piste de recherche fermee
+pour l'instant.
+
+## Bibliotheque externe - Quant-Enthusiasts/Quant-Resources
+
+A la demande de l'utilisateur, exploration du depot public
+[Quant-Enthusiasts/Quant-Resources](https://github.com/Quant-Enthusiasts/Quant-Resources) :
+**une bibliotheque de manuels PDF** (pas de code), organisee en
+Mathematiques (probabilite/stats : Ross, Resnick, Shreve...),
+Programmation (Hilpisch *Python for Algorithmic Trading*, Harris *Trading
+and Exchanges*, un manuel HFT...) et Quant (Hull *Options, Futures and
+Other Derivatives*, Wilmott, *Financial Risk Manager Handbook*...). Rien a
+"integrer" comme code - c'est une liste de lectures de reference, pas un
+projet logiciel. Le seul usage concret fait ici : confirmer par Hull
+(ch. 5, cite ci-dessus) que la limite du lease rate deja identifiee
+empiriquement pour `cash_and_carry_consistency` correspond exactement au
+rendement de convenance de la theorie canonique du cout de portage - pas
+une nouvelle piste, une validation theorique d'un probleme deja connu.
 
 ## Etape 9 bis - Le resultat negatif etait un artefact de turnover, pas un edge negatif reel
 
