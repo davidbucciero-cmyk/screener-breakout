@@ -195,7 +195,7 @@ def run_daily_step(
         new_position = prev_position
 
     turnover = abs(new_position - prev_position)
-    cost = turnover * config.cost_bps / 10_000 * 2
+    cost = turnover * (config.spot_fee_bps + config.perp_fee_bps) / 10_000
     final_equity = equity_after_move * (1 - cost)
 
     _save_position_state(state_dir, new_position, final_equity)

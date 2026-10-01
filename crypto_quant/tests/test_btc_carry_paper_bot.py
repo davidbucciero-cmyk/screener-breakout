@@ -27,7 +27,7 @@ def _spot_perp(n=100, seed=1, spike_at=None, spike_bps=80.0):
 
 
 def _light_cfg(**overrides):
-    base = dict(z_window=15, clip_z=2.0, vol_threshold_bps=0.0, vol_gate_window=10, no_trade_band=0.0, cost_bps=5.0)
+    base = dict(z_window=15, clip_z=2.0, vol_threshold_bps=0.0, vol_gate_window=10, no_trade_band=0.0, spot_fee_bps=16.0, perp_fee_bps=2.0)
     base.update(overrides)
     return BTCCarryConfig(**base)
 

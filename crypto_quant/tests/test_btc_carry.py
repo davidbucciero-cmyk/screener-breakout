@@ -139,7 +139,7 @@ def test_no_trade_band_reduces_turnover():
     perp = spot * (1 + basis / 10000)
 
     def n_trades(no_trade_band: float) -> int:
-        cfg = BTCCarryConfig(vol_threshold_bps=0.0, no_trade_band=no_trade_band, cost_bps=5.0)
+        cfg = BTCCarryConfig(vol_threshold_bps=0.0, no_trade_band=no_trade_band, spot_fee_bps=16.0, perp_fee_bps=2.0)
         z = basis_zscore(spot, perp, cfg.z_window)
         target = (-z.clip(-cfg.clip_z, cfg.clip_z) / cfg.clip_z).clip(-1, 1).shift(1).fillna(0.0)
         prev_pos = 0.0

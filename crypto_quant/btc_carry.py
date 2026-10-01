@@ -57,7 +57,20 @@ class BTCCarryConfig:
     vol_threshold_bps: float = 12.0
     vol_gate_window: int = 20
     no_trade_band: float = 0.5
-    cost_bps: float = 5.0  # taker fee reel Kraken Futures (0.05%), verifie via l'info marche PI_XBTUSD
+    # Frais reels verifies separement par jambe (etape 22 quinquies) - PAS le
+    # meme taux des deux cotes : Kraken Futures (PI_XBTUSD) facture 0.02%
+    # maker / 0.05% taker, mais le Kraken SPOT CLASSIQUE facture 0.16%
+    # maker / 0.26% taker - 5x plus cher. Une premiere version de ce module
+    # appliquait a tort le taux futures aux DEUX jambes (round-trip modelise
+    # a 10bps) - corrige : round-trip reel = spot_fee + perp_fee.
+    # Defauts = MAKER des deux cotes (18bps round-trip) car c'est le SEUL
+    # regime qui reste rentable (Sharpe walk-forward ~0.49, contre -1.85 en
+    # taker/taker a 31bps) - voir README etape 22 quinquies pour le detail
+    # par scenario. Le bot de paper trading ne genere jamais d'ordre reel,
+    # donc ce choix documente surtout la condition de viabilite d'un futur
+    # passage au reel, pas un comportement observe.
+    spot_fee_bps: float = 16.0
+    perp_fee_bps: float = 2.0
 
 
 def basis_bps(spot: pd.Series, perp: pd.Series) -> pd.Series:
@@ -114,6 +127,10 @@ def carry_spread_equity(spot: pd.Series, perp: pd.Series, config: BTCCarryConfig
     spread_return = perp.pct_change() - spot.pct_change()
     target = target_exposure.shift(1).fillna(0.0)
 
+    # Round-trip = somme des DEUX frais reels (pas le meme taux double -
+    # cf. docstring BTCCarryConfig, correction etape 22 quinquies).
+    round_trip_bps = config.spot_fee_bps + config.perp_fee_bps
+
     breaker = DrawdownCircuitBreaker(halt_drawdown=0.20, resume_drawdown=0.10, cooldown_periods=5)
     equity = np.empty(len(spot))
     cash_equity = 10_000.0
@@ -123,7 +140,7 @@ def carry_spread_equity(spot: pd.Series, perp: pd.Series, config: BTCCarryConfig
         tgt = target.iloc[i] if allowed else 0.0
         pos = tgt if abs(tgt - prev_pos) > config.no_trade_band else prev_pos
         turnover = abs(pos - prev_pos)
-        cost = turnover * config.cost_bps / 10_000 * 2  # 2 jambes (spot + perpetuel)
+        cost = turnover * round_trip_bps / 10_000
         ret = pos * spread_return.iloc[i] if np.isfinite(spread_return.iloc[i]) else 0.0
         cash_equity *= 1 + ret - cost
         equity[i] = cash_equity

@@ -1156,6 +1156,17 @@ une nouvelle piste, une validation theorique d'un probleme deja connu.
 
 ## Etape 22 - Pivot vers le carry BTC (perpetuel Kraken vs spot Kraken)
 
+> **CORRECTION (etape 22 quinquies)** : les couts de transaction utilises
+> dans cette section (5bps par jambe, round-trip 10bps) appliquaient a
+> tort le tarif FUTURES de Kraken aux DEUX jambes. Le Kraken SPOT
+> CLASSIQUE facture en realite 0.16% maker/0.26% taker - 5 a 8x plus cher
+> - round-trip reel 18bps (maker/maker) a 31bps (taker/taker), pas 10bps.
+> **Le Sharpe OOS enchaine final tombe de 1.82 a 0.94** une fois corrige
+> (toujours pas negatif, mais aucun fold ne passe clairement le SPA a
+> 5% - fold 3 a 0.052, le plus proche). Voir le detail complet, et les
+> pistes pour y remedier (exchange moins cher pour la jambe spot,
+> minimiser son turnover), a la fin de cette section.
+
 **Contexte** : a la demande de l'utilisateur, etude d'un depot GitHub
 public (KrishSaraf/BTC-Cash-and-Carry) implementant un arbitrage
 cash-and-carry BTC reel (long spot Binance / short futures COIN-M
@@ -1261,12 +1272,63 @@ juste pas significatif) - la porte de volatilite le laisse a l'ecart
 84% du temps (contre 34% en folds 2/3), reconnaissant correctement ce
 regime comme trop calme plutot que de continuer a perdre.
 
-**Sensibilite au cout** (le vrai point de fragilite identifie) : la
-version SANS bande bascule nette entre 5 et 8 bps de cout aller-retour
-(Sharpe 1.53 -> -0.22) - viable seulement avec une execution proche du
-maker (2bps chez Kraken Futures), pas des ordres au marche naifs. La
-bande sans-trade elargit nettement cette marge (folds 2/3 restent
-profitables meme a 8bps avec la bande).
+**Sensibilite au cout** (le vrai point de fragilite identifie, mais
+sous-estime - voir la correction ci-dessous) : la version SANS bande
+bascule nette entre 5 et 8 bps de cout aller-retour (Sharpe 1.53 ->
+-0.22) - viable seulement avec une execution proche du maker, pas des
+ordres au marche naifs. La bande sans-trade elargit nettement cette
+marge.
+
+### Etape 22 quinquies - Correction : le modele de cout etait faux (question explicite de l'utilisateur)
+
+A la question "tu ne peux pas avoir une idee precise des frais ?",
+verification directe des deux tarifs reels (`ccxt`, info marche) plutot
+que de confirmer une approximation :
+
+| Jambe | Maker | Taker |
+|---|---|---|
+| Kraken Futures (PI_XBTUSD, perpetuel) | 0.02% | 0.05% |
+| **Kraken SPOT classique (BTC/USD)** | **0.16%** | **0.26%** |
+
+Le modele initial appliquait le tarif FUTURES (5bps) aux DEUX jambes
+(round-trip 10bps) - **la jambe spot est en realite 5 a 8x plus chere**.
+`BTCCarryConfig` corrige (`spot_fee_bps`/`perp_fee_bps` separes, plus un
+seul `cost_bps`) et walk-forward refait avec les VRAIS couts :
+
+| Scenario | Round-trip | Sharpe OOS (3 folds) |
+|---|---|---|
+| Taker/Taker (26+5bps) | 31bps | -1.85 |
+| **Maker/Maker (16+2bps, defaut corrige)** | **18bps** | **0.94** |
+| Ancien modele (faux, 5+5bps) | 10bps | 1.99 |
+
+**OOS Sharpe enchaine corrige : 0.94** (vs le 1.82 annonce avant
+correction) - fold 1 ne trade plus du tout (edge insuffisant face au
+cout meme avec la porte+bande), fold 2 a 0.89 (SPA p=0.117), fold 3 a
+1.36 (SPA p=0.052 - proche du seuil mais ne le passe pas). **Toujours
+positif, mais aucun fold ne passe clairement le test SPA a 5% une fois
+les vrais couts appliques** - contrairement a ce qui etait rapporte
+avant cette correction.
+
+**Deux pistes identifiees pour ameliorer l'economie reelle** (ni l'une
+ni l'autre encore implementee) :
+1. **Exchange moins cher pour la jambe spot** : OKX facture 0.10% maker
+   / 0.15% taker sur le spot BTC (verifie en direct), ~40% moins cher
+   que Kraken. En gardant le SIGNAL calcule sur Kraken (spot+perpetuel,
+   propre, deja valide) mais en executant la jambe longue sur OKX :
+   round-trip 12bps (OKX maker + Kraken Futures maker) -> **Sharpe OOS
+   1.30**. Contrepartie : deux exchanges a la fois (deux comptes, deux
+   jeux de cles API), et un risque d'ecart de prix OKX/Kraken entre le
+   calcul du signal et l'execution - plus petit que le bruit
+   inter-exchange deja ecarte (etape 22, Binance.US+Deribit - deux
+   marches spot liquides du meme actif divergent peu, contrairement a
+   un spot compare a un derive), mais reel, et ca abandonne le choix
+   "tout sur un seul exchange" fait expres au debut de l'etape 22.
+2. **Minimiser le turnover de la jambe spot** (non teste) : plutot que
+   d'acheter/vendre le spot a chaque rebalancement (le cout le plus
+   cher du pipeline), l'acheter une fois et le garder statique, en ne
+   modulant activement que la jambe futures (moins chere) pour ajuster
+   l'exposition nette - evite completement le besoin d'un deuxieme
+   exchange en s'attaquant directement a la cause du cout.
 
 ### Piste explicitement ECARTEE : futures trimestriels dates
 
@@ -1297,7 +1359,10 @@ Kraken.
   INCREMENTAL (etat persiste jour par jour) plutot qu'en un seul passage
   vectorise, car `LiveExecutor` (etape 6) ne modelise que des positions
   longues sur un symbole unique - pas adapte a un spread a deux jambes.
-  N'utilise PAS LiveExecutor. 6 tests (`test_btc_carry_paper_bot.py`).
+  N'utilise PAS LiveExecutor. Journal quotidien append-only
+  (`daily_log.csv` - `position.json` n'est qu'un instantane ecrase
+  chaque jour, insuffisant pour suivre l'equity dans le temps). 7 tests
+  (`test_btc_carry_paper_bot.py`).
 - **Routine quotidienne creee et activee** ("BTC carry paper bot -
   execution quotidienne", 00:15 UTC - apres la cloture de la bougie
   journaliere Kraken a 00:00 UTC) : execute `run_daily_step()`, commit/
