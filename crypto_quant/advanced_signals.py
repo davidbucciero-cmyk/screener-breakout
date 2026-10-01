@@ -199,6 +199,7 @@ def cash_and_carry_consistency(
     etf_price: pd.Series,
     risk_free_rate: float,
     days_to_next_expiry: float,
+    normalization_window: int = 250,
 ) -> pd.DataFrame:
     """Verifie la coherence sans-arbitrage entre le contrat futures
     front-month et l'ETF physique (GLD) - l'equivalent gold reel du
@@ -213,20 +214,34 @@ def cash_and_carry_consistency(
     l'hypothese (ex: lease rate de l'or non nul), soit une vraie
     inefficience exploitable.
 
-    etf_price sert de proxy du spot (GLD ne represente pas exactement 1
-    once d'or - le RATIO/ecart relatif importe ici, pas le niveau absolu,
-    pour detecter une deviation anormale dans le temps).
+    BUG CORRIGE (trouve en recherche de combinaison, etape 21 bis) : GLD ne
+    represente PAS 1 once d'or (ratio observe ~10.5x, GLD cote en $/part,
+    GC=F en $/once) - utiliser `theoretical_futures` BRUT comme reference
+    rendait `deviation` enorme et quasi constante (domine par cet ecart
+    d'UNITE, pas par une vraie incoherence de marche), ce qui produisait un
+    "signal" en realite une proxy deguisee de la tendance de long terme
+    (Sharpe walk-forward ~1.4, bien au-dela de tout ce qui a ete trouve
+    ailleurs cette session - le signe classique d'un artefact, confirme en
+    verifiant le ratio GC=F/GLD directement). Fixe en normalisant le RATIO
+    front/spot_proxy contre sa PROPRE moyenne/ecart-type glissants
+    (z-score) plutot que de comparer un niveau absolu a une formule
+    theorique qui suppose une correspondance 1:1 inexistante.
     """
     common_index = front_price.index.intersection(etf_price.index)
     front = front_price.reindex(common_index)
     spot_proxy = etf_price.reindex(common_index)
 
     T = days_to_next_expiry / 365.0
-    theoretical_futures = spot_proxy * np.exp(risk_free_rate * T)
-    deviation = (front - theoretical_futures) / theoretical_futures
+    theoretical_ratio = np.exp(risk_free_rate * T)  # ecart theorique MULTIPLICATIF attendu (cout de portage), independant de l'unite
+    observed_ratio = front / spot_proxy
+    normalized_ratio = observed_ratio / theoretical_ratio  # isole le cout de portage, retire le facteur d'unite GLD/once constant
+
+    rolling_mean = normalized_ratio.rolling(normalization_window, min_periods=30).mean()
+    rolling_std = normalized_ratio.rolling(normalization_window, min_periods=30).std()
+    deviation = (normalized_ratio - rolling_mean) / rolling_std
 
     return pd.DataFrame(
-        {"spot_proxy": spot_proxy, "front": front, "theoretical_futures": theoretical_futures, "deviation": deviation}
+        {"spot_proxy": spot_proxy, "front": front, "normalized_ratio": normalized_ratio, "deviation": deviation}
     )
 
 

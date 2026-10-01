@@ -111,14 +111,30 @@ def test_cross_sectional_momentum_tilt_favors_strongest_asset():
     assert (last >= 0).all()
 
 
-def test_cash_and_carry_consistency_zero_deviation_when_theoretical():
-    index = pd.date_range("2024-01-01", periods=30, freq="D")
+def test_cash_and_carry_consistency_ignores_constant_unit_scale():
+    # GLD ne represente pas 1 once d'or (ratio reel ~10.5x, cf. etape 21
+    # bis) - un facteur d'echelle CONSTANT entre front et spot_proxy ne
+    # doit jamais, a lui seul, produire une deviation systematique : seul
+    # un changement du ratio dans le temps doit ressortir. Bruit minuscule
+    # ajoute pour que l'ecart-type glissant soit non-nul (un ratio
+    # PARFAITEMENT constant rend le z-score indefini par construction,
+    # 0/0 - pas un bug, juste un cas degenere a eviter dans ce test).
+    rng = np.random.default_rng(0)
+    index = pd.date_range("2024-01-01", periods=300, freq="D")
+    spot = pd.Series(100.0 + rng.normal(0, 0.01, 300), index=index)
+    front = spot * 10.5  # facteur d'unite constant, pas une incoherence de marche
+    result = cash_and_carry_consistency(front, spot, risk_free_rate=0.0, days_to_next_expiry=90, normalization_window=100)
+    # Pas de biais systematique : la moyenne du z-score doit rester proche de 0.
+    assert abs(result["deviation"].dropna().mean()) < 0.5
+
+
+def test_cash_and_carry_consistency_detects_genuine_ratio_shift():
+    index = pd.date_range("2024-01-01", periods=300, freq="D")
     spot = pd.Series(100.0, index=index)
-    T = 90 / 365.0
-    r = 0.02
-    theoretical_front = spot * np.exp(r * T)
-    result = cash_and_carry_consistency(theoretical_front, spot, risk_free_rate=r, days_to_next_expiry=90)
-    assert np.allclose(result["deviation"], 0.0, atol=1e-9)
+    front = spot * 10.5
+    front.iloc[200:] *= 1.05  # le ratio front/spot saute nettement a partir du jour 200
+    result = cash_and_carry_consistency(front, spot, risk_free_rate=0.0, days_to_next_expiry=90, normalization_window=100)
+    assert result["deviation"].iloc[205:215].abs().mean() > 1.0
 
 
 def test_macro_factor_exposure_recovers_known_beta():
