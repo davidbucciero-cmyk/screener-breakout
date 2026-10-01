@@ -2,3 +2,6 @@
 requests>=2.31.0
 yfinance>=0.2.36
 openbb>=4.0.0
+arch>=8.0.0
+hmmlearn>=0.3.0
+statsmodels>=0.15.0
