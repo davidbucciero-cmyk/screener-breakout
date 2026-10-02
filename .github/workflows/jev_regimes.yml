@@ -1,0 +1,179 @@
+name: Jev regimes
+
+on:
+  workflow_dispatch:
+    inputs:
+      assets:
+        description: 'Actifs (ticker:recherche news), separes par des virgules'
+        default: 'BTC-USD:bitcoin,AMZN:Amazon stock,NVDA:Nvidia stock,TSLA:Tesla stock,SPY:stock market'
+      days:
+        description: 'Nb de jours testes par actif (1 appel Jev par jour)'
+        default: '40'
+
+jobs:
+  regimes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy requests yfinance
+      - name: Jev vs marche
+        run: |
+          cat > regimes.py <<'PYEOF'
+          """Jev vs marche : les regimes predits a partir des titres de news sont-ils bons ?
+
+          Pour chaque actif et chaque jour D :
+            - titres Google News du jour D -> Jev -> P(regime des 5 prochaines seances)
+            - regime realise : sens et volatilite du rendement de la cloture D+1 a D+6
+              (on saute D+1 pour ne pas compter les news publiees apres la cloture)
+          Compare a deux references sans news : frequences passees et persistance.
+          """
+          import email.utils
+          import os
+          import sys
+          import time
+          import urllib.parse
+          import xml.etree.ElementTree as ET
+
+          import numpy as np
+          import pandas as pd
+          import requests
+          import yfinance as yf
+
+          REGIMES = ["haussier_calme", "haussier_volatil", "baissier_calme", "baissier_volatil"]
+          CRITERIA = {
+              "haussier_calme": "hausse, volatilite faible ou normale",
+              "haussier_volatil": "hausse, volatilite elevee",
+              "baissier_calme": "baisse, volatilite faible ou normale",
+              "baissier_volatil": "baisse, volatilite elevee",
+          }
+          H = 5          # horizon en seances
+          EPS = 0.02     # plancher de probabilite pour la log-loss
+
+
+          def headlines(query, day, n=15):
+              q = f"{query} after:{day:%Y-%m-%d} before:{day + pd.Timedelta(days=1):%Y-%m-%d}"
+              url = "https://news.google.com/rss/search?" + urllib.parse.urlencode(
+                  {"q": q, "hl": "en-US", "gl": "US", "ceid": "US:en"})
+              r = requests.get(url, timeout=30)
+              r.raise_for_status()
+              titles = []
+              for item in ET.fromstring(r.content).iter("item"):
+                  pub = email.utils.parsedate_to_datetime(item.findtext("pubDate"))
+                  if pub.date() == day.date():
+                      titles.append(item.findtext("title"))
+              return titles[:n]
+
+
+          def jev(ticker, day, titles):
+              state = f"Actif : {ticker}. Date : {day:%Y-%m-%d}. Titres de presse du jour :\n- " + "\n- ".join(titles)
+              r = requests.post(
+                  "https://api.typesafe.ai/v1/systemone",
+                  headers={"Authorization": f"Bearer {os.environ['TYPESAFE_API_KEY']}"},
+                  json={"model": "jev-latest", "state": state, "questions": {"regime": {
+                      "type": "choice",
+                      "instructions": (f"D'apres ces titres, quel sera le regime de {ticker} sur les {H} "
+                                       "prochaines seances ? Volatilite elevee = nettement au-dessus de "
+                                       "sa volatilite habituelle des derniers mois."),
+                      "criteria": CRITERIA}}},
+                  timeout=60,
+              )
+              if r.status_code != 200:
+                  raise RuntimeError(f"Jev HTTP {r.status_code} : {r.text[:300]}")
+              return r.json()["answers"]["regime"]["probabilities"]
+
+
+          def realized(close):
+              """Regime realise de D+1 a D+1+H, et regime passe de D-H a D (persistance)."""
+              lr = np.log(close).diff()
+              vol = lr.rolling(H).std()
+              ref = vol.rolling(60, min_periods=40).median()   # vol habituelle, passee uniquement
+              fwd_ret = np.log(close.shift(-1 - H) / close.shift(-1))
+              fwd_vol = vol.shift(-1 - H)
+              past_ret = np.log(close / close.shift(H))
+
+              def lab(ret, v):
+                  return np.where(ret >= 0, "haussier", "baissier") + "_" + np.where(v > ref, "volatil", "calme")
+
+              out = pd.DataFrame({"fwd": lab(fwd_ret, fwd_vol), "past": lab(past_ret, vol)}, index=close.index)
+              out[fwd_ret.isna() | fwd_vol.isna() | ref.isna()] = None
+              return out
+
+
+          def scores(P, y):
+              P = np.clip(P, EPS, 1)
+              P = P / P.sum(1, keepdims=True)
+              Y = (np.array(REGIMES)[None, :] == y[:, None]).astype(float)
+              return {"log_loss": -np.mean(np.log((P * Y).sum(1))),
+                      "brier": np.mean(((P - Y) ** 2).sum(1)),
+                      "precision": np.mean(P.argmax(1) == Y.argmax(1))}
+
+
+          def main():
+              assets = [a.split(":", 1) for a in sys.argv[1].split(",")]
+              days = int(sys.argv[2])
+              rows = []
+              for ticker, query in assets:
+                  close = yf.download(ticker, period="2y", auto_adjust=True, progress=False)["Close"].squeeze()
+                  close.index = pd.to_datetime(close.index).tz_localize(None)
+                  lab = realized(close).dropna()
+                  hist = lab["fwd"]
+                  for day in lab.index[-days:]:
+                      titles = headlines(query, day)
+                      if len(titles) < 3:
+                          continue
+                      p = jev(ticker, day, titles)
+                      # frequences des regimes deja connus a la date D (fenetre close avant D+1)
+                      known = hist[hist.index <= day - pd.tseries.offsets.BDay(H + 1)].tail(250)
+                      freq = known.value_counts(normalize=True).reindex(REGIMES).fillna(0)
+                      rows.append({"ticker": ticker, "date": day.date(), "n_titres": len(titles),
+                                   "realise": lab.at[day, "fwd"], "passe": lab.at[day, "past"],
+                                   **{f"jev_{k}": p.get(k, 0.0) for k in REGIMES},
+                                   **{f"freq_{k}": freq[k] for k in REGIMES}})
+                      time.sleep(0.5)
+                  print(f"{ticker} : {sum(r['ticker'] == ticker for r in rows)} jours notes", flush=True)
+
+              df = pd.DataFrame(rows)
+              os.makedirs("output", exist_ok=True)
+              df.to_csv("output/jev_regimes.csv", index=False)
+              if df.empty:
+                  print("Aucun jour exploitable")
+                  return
+
+              y = df["realise"].to_numpy()
+              jevP = df[[f"jev_{k}" for k in REGIMES]].to_numpy()
+              freqP = df[[f"freq_{k}" for k in REGIMES]].to_numpy()
+              persP = np.where(np.array(REGIMES)[None, :] == df["passe"].to_numpy()[:, None], 0.55, 0.15)
+              res = pd.DataFrame({"Jev (news)": scores(jevP, y),
+                                  "Frequences passees": scores(freqP, y),
+                                  "Persistance": scores(persP, y)}).T
+              print(f"\n=== {len(df)} previsions, horizon {H} seances ===")
+              print("(log-loss et Brier : plus bas = mieux ; hasard = 1,386 et 0,75)")
+              print(res.round(3).to_string())
+
+              conf = jevP.max(1)
+              hit = jevP.argmax(1) == np.array([REGIMES.index(v) for v in y])
+              print("\nCalibration de Jev (confiance annoncee vs taux de reussite) :")
+              for lo, hi in [(0, 0.5), (0.5, 0.8), (0.8, 0.99), (0.99, 1.01)]:
+                  m = (conf >= lo) & (conf < hi)
+                  if m.any():
+                      print(f"  confiance {lo:.2f}-{min(hi, 1):.2f} : {m.sum():4d} prev., reussite {hit[m].mean():.0%}")
+              sens_ok = np.mean([REGIMES[i].split("_")[0] == v.split("_")[0] for i, v in zip(jevP.argmax(1), y)])
+              vol_ok = np.mean([REGIMES[i].split("_")[1] == v.split("_")[1] for i, v in zip(jevP.argmax(1), y)])
+              print(f"\nSens seul : {sens_ok:.0%} de reussite ; volatilite seule : {vol_ok:.0%}")
+              print("\nRealise :", df["realise"].value_counts().to_dict())
+
+
+          if __name__ == "__main__":
+              main()
+          PYEOF
+          python regimes.py "${{ inputs.assets }}" "${{ inputs.days }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jev-regimes
+          path: output/
