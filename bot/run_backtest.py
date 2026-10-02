@@ -12,7 +12,9 @@ import pandas as pd
 
 from bot.backtest import GATE, gate, metrics, regimes, split, t_threshold
 from bot.data import fetch_1h
-from bot.multi import MULTI, SYMBOLS, equal_weight_hold
+from bot.funding import crowded_longs, fetch_funding
+from bot.multi import (MULTI, SYMBOLS, UNIVERSE, blend, cross_sectional_momentum, equal_weight_hold,
+                       rotation_with_funding)
 from bot.strategies import FEE_BPS, SLIPPAGE_BPS, run_strategies
 
 REPORT = Path(__file__).parent / 'reports' / 'backtest.md'
@@ -29,7 +31,7 @@ def _regime_table(reg):
     return '\n'.join(rows)
 
 
-def build_report(df, oos_years=2, others=None):
+def build_report(df, oos_years=2, others=None, funding=None):
     oos_start = df.index[-1] - pd.Timedelta(days=365 * oos_years)
     results = run_strategies(df)
     if others:
@@ -37,6 +39,16 @@ def build_report(df, oos_years=2, others=None):
         for name, fn in MULTI.items():
             results[name] = fn(dfs)[:2]
         results['Reference - Buy & hold equipondere BTC/ETH/SOL'] = equal_weight_hold(dfs)[:2]
+        three = {k: dfs[k] for k in SYMBOLS}
+        if all(k in dfs for k in UNIVERSE):
+            results['I - Momentum top 3 sur 11 cryptos'] = cross_sectional_momentum(
+                {k: dfs[k] for k in UNIVERSE})[:2]
+        if funding is not None:
+            results['J - Rotation G + filtre de financement'] = rotation_with_funding(
+                three, crowded_longs(funding))[:2]
+        results['K - Panier G + H + E'] = blend(results['G - Rotation momentum BTC/ETH/SOL'],
+                                                results['H - Trend diversifie BTC/ETH/SOL'],
+                                                results['E - Cassure Donchian 20/10 j'])
     n_tests = sum(not k.startswith('Reference') for k in results)
     head = '| Strategie | Rdt annuel | Sharpe | t-stat | Max DD | Taux reussite | Trades | Expo |\n|---|---|---|---|---|---|---|---|'
     lines = [
@@ -77,8 +89,14 @@ def main():
     p.add_argument('--years', type=int, default=4)
     args = p.parse_args()
     bars = 24 * 365 * args.years
-    others = {s: fetch_1h(s, bars=bars) for s in SYMBOLS if s != 'BTCUSDT'}
-    report = build_report(fetch_1h(bars=bars), others=others)
+    others = {s: fetch_1h(s, bars=bars) for s in UNIVERSE if s != 'BTCUSDT'}
+    btc = fetch_1h(bars=bars)
+    try:
+        funding = fetch_funding(btc.index[0] - pd.Timedelta(days=400))
+    except Exception as e:  # source externe : on le signale au lieu de planter
+        logging.warning(f'Funding indisponible, strategie J non testee : {e}')
+        funding = None
+    report = build_report(btc, others=others, funding=funding)
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(report)
     if os.environ.get('GITHUB_STEP_SUMMARY'):

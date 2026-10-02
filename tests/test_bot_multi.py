@@ -33,3 +33,37 @@ def test_multi_asset_ignores_future_and_stays_unlevered(fn):
 def test_rotation_holds_at_most_one_asset():
     _, _, w = rotation_momentum(_dfs())
     assert ((w > 0).sum(axis=1) <= 1).all()
+
+
+def test_top3_holds_at_most_three_and_funding_forces_cash():
+    from bot.funding import crowded_longs
+    from bot.multi import rotation_momentum
+    dfs = _dfs()
+    _, _, w = rotation_momentum(dfs, top_k=3)
+    assert ((w > 0).sum(axis=1) <= 3).all() and (w.sum(axis=1) <= 1 + 1e-9).all()
+    days = w.index.floor('D').unique()
+    risk_off = pd.Series(True, index=days)
+    _, _, w_off = rotation_momentum(dfs, risk_off=risk_off)
+    assert (w_off == 0).all().all()
+
+
+def test_crowded_longs_ignores_future():
+    from bot.funding import crowded_longs
+    rng = np.random.default_rng(0)
+    idx = pd.date_range('2022-01-01', periods=3 * 800, freq='8h', tz='UTC')
+    f = pd.Series(rng.normal(0.0001, 0.0001, len(idx)), index=idx)
+    a = crowded_longs(f)
+    f2 = f.copy()
+    f2.iloc[-300:] = 0.01
+    b = crowded_longs(f2)
+    cut = f.index[-300].floor('D')
+    pd.testing.assert_series_equal(a[a.index < cut], b[b.index < cut])
+    assert b.loc[cut + pd.Timedelta(days=10)]  # pic de funding detecte des qu'il apparait
+
+
+def test_blend_averages_returns():
+    from bot.multi import blend
+    idx = pd.date_range('2024-01-01', periods=3, freq='h', tz='UTC')
+    t = pd.DataFrame({'entry_time': [], 'pnl': []})
+    r, _ = blend((pd.Series([0.01, 0.0, 0.02], index=idx), t), (pd.Series([0.03, 0.0, 0.0], index=idx), t))
+    assert list(r.round(4)) == [0.02, 0.0, 0.01]

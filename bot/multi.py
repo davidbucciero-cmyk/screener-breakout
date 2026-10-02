@@ -42,18 +42,22 @@ def _apply(hourly, w_daily):
     return r, trades.sort_values('entry_time').reset_index(drop=True), w
 
 
-def rotation_momentum(dfs, lookback=30):
+def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None):
+    """Chaque dimanche : les top_k cryptos au meilleur rendement `lookback` j, si ce rendement est > 0.
+
+    Chaque ligne pese 1/top_k, reduite pour viser 40 % de vol. risk_off (booleen quotidien, connu a
+    la cloture du jour) force le cash le lendemain, meme en cours de semaine.
+    """
     hourly, daily = _closes(dfs)
     mom = daily / daily.shift(lookback) - 1
     vol = daily.pct_change().rolling(30).std() * math.sqrt(365)
-    best = mom.dropna(how='all').idxmax(axis=1)
-    w = pd.DataFrame(0.0, index=daily.index, columns=daily.columns)
-    for d in daily.index:
-        b = best.get(d)
-        if isinstance(b, str) and mom.at[d, b] > 0 and vol.at[d, b] > 0:
-            w.at[d, b] = min(1.0, TARGET_VOL / vol.at[d, b])
+    rank = mom.rank(axis=1, ascending=False, method='first')
+    sel = (rank <= top_k) & (mom > 0) & (vol > 0)
+    w = (sel * (TARGET_VOL / vol).clip(upper=1.0) / top_k).fillna(0.0)
     # Re-balance hebdomadaire (cloture du dimanche), poids tenus jusqu'au suivant.
     w = w[w.index.dayofweek == 6].reindex(w.index).ffill().fillna(0.0)
+    if risk_off is not None:
+        w = w.mul(1 - risk_off.reindex(w.index).fillna(False).astype(float), axis=0)
     return _apply(hourly, w)
 
 
@@ -77,3 +81,29 @@ MULTI = {
     'G - Rotation momentum BTC/ETH/SOL': rotation_momentum,
     'H - Trend diversifie BTC/ETH/SOL': diversified_trend,
 }
+
+
+# --- Quatrieme serie, fixee a priori le 2026-10-02 avant tout backtest ------------------------------
+# I - Momentum transversal sur 11 cryptos negociables sur Alpaca : chaque dimanche, les 3 meilleures
+#     sur 30 j si leur rendement est > 0, un tiers chacune, vol ciblee. Facteur documente en crypto
+#     (Liu, Tsyvinski & Wu 2022). Extension de G a un univers plus large.
+# J - G + filtre de financement : cash le lendemain si le funding moyen 7 j du perpetuel BTC est dans
+#     le decile haut de l'annee passee (longs a levier encombres).
+# K - Panier de strategies : un tiers G, un tiers H, un tiers E (diversification entre strategies).
+UNIVERSE = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOGEUSDT', 'LTCUSDT',
+            'BCHUSDT', 'UNIUSDT', 'AAVEUSDT', 'DOTUSDT']
+
+
+def cross_sectional_momentum(dfs_universe):
+    return rotation_momentum(dfs_universe, top_k=3)
+
+
+def rotation_with_funding(dfs, crowded):
+    return rotation_momentum(dfs, risk_off=crowded)
+
+
+def blend(*results):
+    """Capital reparti a parts egales entre strategies (rendements nets deja frais inclus)."""
+    rs = pd.concat([r for r, _ in results], axis=1).dropna()
+    trades = pd.concat([t for _, t in results], ignore_index=True)
+    return rs.mean(axis=1), trades
