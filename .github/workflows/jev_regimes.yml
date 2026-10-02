@@ -1,6 +1,9 @@
 name: Jev regimes
 
 on:
+  push:
+    branches: [claude/sleepy-faraday-w7p1hk]
+    paths: ['.github/workflows/jev_regimes.yml']
   workflow_dispatch:
     inputs:
       assets:
@@ -171,7 +174,7 @@ jobs:
           if __name__ == "__main__":
               main()
           PYEOF
-          python regimes.py "${{ inputs.assets }}" "${{ inputs.days }}"
+          python regimes.py "${{ inputs.assets || 'BTC-USD:bitcoin,AMZN:Amazon stock,NVDA:Nvidia stock,TSLA:Tesla stock,SPY:stock market' }}" "${{ inputs.days || '40' }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
