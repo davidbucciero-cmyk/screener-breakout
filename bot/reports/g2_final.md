@@ -24,7 +24,7 @@ Gate revise par l'utilisateur avant ce test : Sharpe > 1,5, drawdown max > -20 %
 | Version | Rdt annuel | Sharpe | t-stat | Max DD | Profit factor | Trades gagnants | Trades | Expo |
 |---|---|---|---|---|---|---|---|---|
 | G2 a 19% de vol (candidate) | +18.0% | 1.28 | 2.56 | -16.9% | 2.86 | 45% | 38 | 49% |
-| G2 a 40 % de vol (version precedente) | +35.0% | 1.20 | 2.41 | -33.0% | 2.88 | 45% | 38 | 49% |
+| G2 a 40 % de vol (version precedente) | +34.9% | 1.20 | 2.40 | -33.0% | 2.88 | 45% | 38 | 49% |
 
 ## Version candidate par annee
 
@@ -39,4 +39,4 @@ Gate revise par l'utilisateur avant ce test : Sharpe > 1,5, drawdown max > -20 %
 | 2023 | +43.6% | -9.8% |
 | 2024 | +5.9% | -16.9% |
 | 2025 | +16.0% | -11.6% |
-| 2026 | +10.1% | -7.9% |
+| 2026 | +10.0% | -7.9% |
