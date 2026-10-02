@@ -10,9 +10,13 @@ d'un recalcul a chaque generation).
 Usage: python -m crypto_quant.btc_carry_dashboard
 """
 import json
+import math
 import os
 
 import pandas as pd
+
+from .btc_carry import BTCCarryConfig, basis_bps, basis_zscore, basis_vol_gate
+from .btc_carry_paper_bot import fetch_btc_spot_and_perp
 
 STATE_DIR = os.path.join(os.path.dirname(__file__), "btc_carry_paper_bot_state")
 OUT_DIR = os.path.join(os.path.dirname(__file__), "btc_carry_dashboard")
@@ -48,6 +52,51 @@ def load_json(name: str) -> dict:
         return {}
     with open(path) as f:
         return json.load(f)
+
+
+def compute_trigger_state(current_position: float, config: BTCCarryConfig = BTCCarryConfig()) -> dict:
+    """Etat EXACT du declencheur, calcule en direct sur les memes donnees que
+    le bot (pas reconstruit depuis le journal, trop clairseme pour une
+    fenetre glissante de 30 jours au debut). Deux conditions SEPAREES :
+
+    1. Porte de volatilite : la vol glissante (`vol_gate_window` jours) du
+       basis doit depasser `vol_threshold_bps` pour autoriser le trading.
+    2. Bande sans-trade : l'exposition cible (-z/clip_z) doit s'ecarter de
+       la position courante de plus que `no_trade_band` pour declencher un
+       trade - traduit ici en niveaux de basis (bps) via la moyenne/
+       ecart-type glissants actuels, pour affichage (le seuil REEL est
+       relatif et bouge chaque jour, cette traduction n'est qu'un instantane)."""
+    try:
+        spot, perp, _ = fetch_btc_spot_and_perp()
+    except Exception as exc:
+        return {"available": False, "error": str(exc)}
+
+    b = basis_bps(spot, perp)
+    z = basis_zscore(spot, perp, config.z_window)
+    mean_w = b.rolling(config.z_window, min_periods=10).mean()
+    std_w = b.rolling(config.z_window, min_periods=10).std()
+    recent_vol = b.rolling(config.vol_gate_window, min_periods=10).std()
+
+    if pd.isna(z.iloc[-1]) or pd.isna(recent_vol.iloc[-1]):
+        return {"available": False, "error": "pas assez d'historique pour les fenetres glissantes"}
+
+    vol_gate_open = bool(recent_vol.iloc[-1] > config.vol_threshold_bps)
+
+    z_up = -config.clip_z * (current_position + config.no_trade_band)
+    z_down = -config.clip_z * (current_position - config.no_trade_band)
+    level_up = float(mean_w.iloc[-1] + z_up * std_w.iloc[-1])
+    level_down = float(mean_w.iloc[-1] + z_down * std_w.iloc[-1])
+
+    return {
+        "available": True,
+        "current_basis_bps": float(b.iloc[-1]),
+        "current_zscore": float(z.iloc[-1]),
+        "recent_vol_bps": float(recent_vol.iloc[-1]),
+        "vol_threshold_bps": config.vol_threshold_bps,
+        "vol_gate_open": vol_gate_open,
+        "trigger_level_low_bps": min(level_up, level_down),
+        "trigger_level_high_bps": max(level_up, level_down),
+    }
 
 
 def build_dashboard_data() -> dict:
@@ -114,6 +163,7 @@ def build_dashboard_data() -> dict:
         "buy_hold_return": buy_hold_return,
         "rows": rows,
         "backtest_context": BACKTEST_CONTEXT,
+        "trigger_state": compute_trigger_state(current_position),
     }
     return data
 

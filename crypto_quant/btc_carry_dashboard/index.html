@@ -139,6 +139,10 @@
   .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 12px; }
   .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
   .legend-item .key { width: 14px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+  .trigger-info { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; font-size: 12.5px; }
+  .trigger-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .trigger-row .t-label { color: var(--ink-2); min-width: 150px; }
+  .trigger-row .t-detail { color: var(--ink-muted); font-family: "IBM Plex Mono", monospace; font-size: 12px; }
   .chart-wrap { position: relative; }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
   .axis-label { font-size: 10.5px; fill: var(--ink-muted); font-family: "IBM Plex Mono", monospace; }
@@ -202,7 +206,8 @@
 
 <div class="card">
   <h2>Basis (perpetuel vs spot, Kraken)</h2>
-  <p class="card-sub">Ecart en points de base &middot; la porte de volatilite coupe le trading sous &plusmn;<span id="vol-th-label">—</span> bps d'ecart-type glissant</p>
+  <p class="card-sub">Ecart en points de base entre le perpetuel et le spot &middot; deux conditions separees declenchent un trade, voir ci-dessous</p>
+  <div class="trigger-info" id="trigger-info"></div>
   <div class="chart-wrap"><svg class="chart" id="basis-chart" viewBox="0 0 860 220"></svg></div>
 </div>
 
@@ -306,7 +311,6 @@
 
     document.getElementById("meta-line").textContent =
       "Derniere execution : " + (data.last_date || "—") + " · genere " + new Date(data.generated_at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
-    document.getElementById("vol-th-label").textContent = data.backtest_context.vol_threshold_bps;
   }
 
   // ---- Chart helpers (shared line-chart renderer with crosshair tooltip) ----
@@ -497,6 +501,33 @@
     });
   }
 
+  function renderTriggerInfo(data) {
+    var el = document.getElementById("trigger-info");
+    var ts = data.trigger_state;
+    if (!ts || !ts.available) {
+      el.innerHTML = '<p class="trigger-row"><span class="t-detail">Etat du declencheur indisponible (' + (ts && ts.error ? ts.error : "pas assez d'historique") + ")</span></p>";
+      return;
+    }
+    var gatePill = ts.vol_gate_open
+      ? '<span class="pill ok">Ouverte</span>'
+      : '<span class="pill flat">Fermee</span>';
+    var rows = [
+      {
+        label: "1. Porte de volatilite",
+        html: gatePill,
+        detail: "vol glissante 20j " + ts.recent_vol_bps.toFixed(1) + " bps vs seuil " + ts.vol_threshold_bps.toFixed(0) + " bps",
+      },
+      {
+        label: "2. Prochain declenchement",
+        html: '<span class="mono tabular">' + fmtBps(ts.trigger_level_low_bps) + " / " + fmtBps(ts.trigger_level_high_bps) + "</span>",
+        detail: "le basis (" + fmtBps(ts.current_basis_bps) + " aujourd'hui, z=" + ts.current_zscore.toFixed(2) + ") doit sortir de cette plage",
+      },
+    ];
+    el.innerHTML = rows.map(function (r) {
+      return '<div class="trigger-row"><span class="t-label">' + r.label + "</span>" + r.html + '<span class="t-detail">' + r.detail + "</span></div>";
+    }).join("");
+  }
+
   function renderFooter(data) {
     var ctx = data.backtest_context;
     document.getElementById("footer-note").innerHTML =
@@ -525,6 +556,7 @@
       diverging: true, zeroLine: true, fmtY: function (v) { return v.toFixed(1) + " bps"; },
       tooltipLabel: "Basis",
     });
+    renderTriggerInfo(data);
     renderTable(data);
     renderFooter(data);
   }

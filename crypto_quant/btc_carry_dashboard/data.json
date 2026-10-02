@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-02T08:16:15.802698+00:00",
+  "generated_at": "2026-10-02T08:29:25.409305+00:00",
   "initial_cash": 10000.0,
   "current_equity": 10000.0,
   "max_equity": 10000.0,
@@ -51,5 +51,15 @@
     "round_trip_bps": 12.0,
     "vol_threshold_bps": 12.0,
     "no_trade_band": 0.5
+  },
+  "trigger_state": {
+    "available": true,
+    "current_basis_bps": -6.32794299430639,
+    "current_zscore": -0.4195918176946673,
+    "recent_vol_bps": 16.73320994984226,
+    "vol_threshold_bps": 12.0,
+    "vol_gate_open": true,
+    "trigger_level_low_bps": -23.456367509696342,
+    "trigger_level_high_bps": 24.104613967254316
   }
 }
