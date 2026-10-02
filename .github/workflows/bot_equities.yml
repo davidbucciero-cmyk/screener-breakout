@@ -34,6 +34,9 @@ jobs:
         run: python -m bot.equities.run
       - name: Modele combine, evaluation unique hors echantillon
         run: python -m bot.equities.run_model
+      - name: Audit des donnees de prix
+        if: always()
+        run: python -m bot.equities.audit
       - name: Sauver le cache meme en cas d'echec
         if: always()
         uses: actions/cache/save@v4
@@ -45,7 +48,7 @@ jobs:
         run: |
           git config user.name "bot-research"
           git config user.email "bot-research@users.noreply.github.com"
-          git add bot/reports/equities_ic.md bot/reports/equities_model.md || true
+          git add bot/reports/equities_ic.md bot/reports/equities_model.md bot/reports/equities_audit.md || true
           if git diff --cached --quiet; then
             echo "Aucun changement"
           else

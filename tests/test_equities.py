@@ -93,3 +93,10 @@ def test_parse_form345_keeps_open_market_purchases():
     assert len(df) == 1
     r = df.iloc[0]
     assert r['ticker'] == 'AAPL' and r['value'] == 15000 and r['filing_date'] == pd.Timestamp('2023-01-05')
+
+
+def test_audit_flags_extremes_and_yearly_compounding():
+    from bot.equities.audit import yearly_from_monthly
+    m = pd.Series([0.1, 0.1], index=pd.to_datetime(['2020-11-30', '2020-12-31']))
+    y = yearly_from_monthly(m)
+    assert y.loc[2020] == pytest.approx(0.1) and y.loc[2021] == pytest.approx(0.1)  # mois de rendement = mois suivant
