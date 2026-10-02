@@ -22,15 +22,19 @@ def month_ends(idx):
 
 def asof_wide(df, key, value, avail, dates, stale=None):
     """Valeur connue a chaque date (derniere disponible), en largeur (dates x key)."""
-    d = df[[key, value, avail]].dropna().sort_values(avail)
+    d = df[[key, value, avail]].dropna().copy()
+    d[avail] = pd.to_datetime(d[avail]).astype('datetime64[ns]')
+    d = d.sort_values(avail)
     wide = d.pivot_table(index=avail, columns=key, values=value, aggfunc='last')
-    when = d.pivot_table(index=avail, columns=key, values=avail, aggfunc='last') if stale else None
     idx = wide.index.union(dates)
     out = wide.reindex(idx).ffill().reindex(dates)
     if stale is not None:
-        seen = when.reindex(idx).ffill().reindex(dates)
-        age = -seen.sub(pd.Series(dates, index=dates), axis=0)
-        out = out.where(age <= stale)
+        # Age calcule en nanosecondes : robuste aux colonnes avec des trous.
+        d['_t'] = d[avail].astype('int64').astype('float64')
+        seen = d.pivot_table(index=avail, columns=key, values='_t', aggfunc='last').reindex(idx).ffill().reindex(dates)
+        now = pd.Series(pd.DatetimeIndex(dates).astype('datetime64[ns]').astype('int64').astype('float64'), index=dates)
+        age = -seen.sub(now, axis=0)
+        out = out.where(age <= float(stale.value))
     return out
 
 

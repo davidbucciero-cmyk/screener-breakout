@@ -24,13 +24,20 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - run: pip install pandas numpy requests yfinance pyarrow
-      - name: Cache des donnees brutes (SEC, Yahoo)
-        uses: actions/cache@v4
+      - name: Restaurer le cache des donnees brutes (SEC, Yahoo)
+        uses: actions/cache/restore@v4
         with:
           path: bot/equities/cache
-          key: equities-raw-v1
+          key: equities-raw-v1-${{ github.run_id }}
+          restore-keys: equities-raw-v1-
       - name: Donnees, panel et IC
         run: python -m bot.equities.run
+      - name: Sauver le cache meme en cas d'echec
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: bot/equities/cache
+          key: equities-raw-v1-${{ github.run_id }}
       - name: Enregistrer le rapport
         if: always()
         run: |
