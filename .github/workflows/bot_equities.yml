@@ -1,4 +1,4 @@
-name: Actions US - IC de chaque bloc (dev 2010-2018)
+name: Actions US - IC par bloc et modele combine
 
 on:
   push:
@@ -32,6 +32,8 @@ jobs:
           restore-keys: equities-raw-v1-
       - name: Donnees, panel et IC
         run: python -m bot.equities.run
+      - name: Modele combine, evaluation unique hors echantillon
+        run: python -m bot.equities.run_model
       - name: Sauver le cache meme en cas d'echec
         if: always()
         uses: actions/cache/save@v4
@@ -43,11 +45,11 @@ jobs:
         run: |
           git config user.name "bot-research"
           git config user.email "bot-research@users.noreply.github.com"
-          git add bot/reports/equities_ic.md || true
+          git add bot/reports/equities_ic.md bot/reports/equities_model.md || true
           if git diff --cached --quiet; then
             echo "Aucun changement"
           else
-            git commit -m "Actions US : IC par bloc $(date -u +%Y-%m-%d)"
+            git commit -m "Actions US : rapports $(date -u +%Y-%m-%d)"
             git pull --rebase origin ${{ github.ref_name }}
             git push origin HEAD:${{ github.ref_name }}
           fi
