@@ -25,6 +25,9 @@ def cached(name, fn):
         log.info(f'{name} : cache')
         return pd.read_parquet(path)
     df = fn()
+    if df.empty:
+        raise RuntimeError(f'{name} : aucune donnee recuperee')
+    log.info(f'{name} : {len(df)} lignes')
     CACHE.mkdir(exist_ok=True)
     df.to_parquet(path)
     return df

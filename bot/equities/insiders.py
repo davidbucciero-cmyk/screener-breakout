@@ -12,7 +12,8 @@ import pandas as pd
 from bot.equities.sec import get
 
 log = logging.getLogger(__name__)
-URL = 'https://www.sec.gov/files/structureddata/data/form-345-data-sets/{y}q{q}_form345.zip'
+URLS = ['https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/{y}q{q}_form345.zip',
+        'https://www.sec.gov/files/structureddata/data/form-345-data-sets/{y}q{q}_form345.zip']
 
 
 def _tsv(z, name):
@@ -42,11 +43,17 @@ def purchases(first_year=2009, last_year=None):
     parts = []
     for y in range(first_year, last_year + 1):
         for q in range(1, 5):
-            r = get(URL.format(y=y, q=q))
+            r = None
+            for url in URLS:
+                r = get(url.format(y=y, q=q))
+                if r is not None:
+                    break
             if r is None:
                 log.info(f'Form 345 {y}T{q} pas encore publie')
                 continue
             df = parse_quarter(r.content)
             log.info(f'Form 345 {y}T{q} : {len(df)} achats')
             parts.append(df)
+    if not parts:
+        raise RuntimeError('Aucun fichier Form 345 trouve a la SEC : verifier les adresses dans URLS')
     return pd.concat(parts, ignore_index=True)
