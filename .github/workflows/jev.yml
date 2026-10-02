@@ -1,0 +1,13 @@
+name: Jev test
+
+on: workflow_dispatch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -s https://api.typesafe.ai/v1/systemone \
+            -H "Authorization: Bearer ${{ secrets.TYPESAFE_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"jev-latest","state":"Amazon shares fell 4% after weak guidance; the VIX rose to 24.","questions":{"regime":{"type":"choice","instructions":"Quel regime de marche ?","criteria":["haussier calme","haussier volatil","baissier calme","baissier volatil"]}}}'
