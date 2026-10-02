@@ -103,10 +103,12 @@ def build_panel(close, tickers, shares, fund, purch):
     return panel.reset_index()
 
 
-def information_coefficients(panel, end_dev='2018-12-31', features=FEATURES):
-    """IC de rang mensuel de chaque feature vs rendement du mois suivant, periode de dev uniquement."""
+def information_coefficients(panel, end_dev='2018-12-31', features=FEATURES, start=None):
+    """IC de rang mensuel de chaque feature vs rendement du mois suivant, entre `start` et `end_dev`."""
     end_dev = pd.Timestamp(end_dev)
     p = panel.dropna(subset=['fwd_ret'])
+    if start is not None:
+        p = p[p['date'] >= pd.Timestamp(start)]
     # Le rendement cible du mois d doit se terminer avant la fin de la periode de dev.
     month_after = p['date'] + pd.offsets.MonthEnd(1)
     p = p[month_after <= end_dev]

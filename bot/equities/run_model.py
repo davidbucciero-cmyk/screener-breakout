@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from bot.backtest import GATE
-from bot.equities.features import build_panel, month_ends
+from bot.equities.features import build_panel, information_coefficients, month_ends
 from bot.equities.model import RETAINED, backtest, stats, yearly_weights
 from bot.equities.run import CACHE, load
 from bot.research import _bonferroni
@@ -39,7 +39,7 @@ def _row(name, s):
             f"{s['max_drawdown']:.1%} | {s['mois_positifs']:.0%} | {hit} |")
 
 
-def build_report(res, weights):
+def build_report(res, weights, block_ics=None):
     oos = res.loc[OOS_START:]
     dev = res.loc[:'2018-12-31']
     s_h = stats(oos['hedged'], oos['hit_positions'])
@@ -76,6 +76,25 @@ def build_report(res, weights):
               '| Annee | ' + ' | '.join(RETAINED) + ' |', '|' + '---|' * (len(RETAINED) + 1)]
     for y, w in weights.dropna(how='all').iterrows():
         lines.append(f'| {y} | ' + ' | '.join(f'{v:+.3f}' for v in w) + ' |')
+    lines += ['', '## Diagnostic (mesure, pas un nouvel essai) : nos actions contre l\'action moyenne de l\'univers', '',
+              'Les IC des blocs mesuraient la capacite a battre l\'action moyenne (poids egal), pas le SPY.', '',
+              '| Periode | Mois | Ecart annuel vs action moyenne | Sharpe de l\'ecart | t-stat | Mois gagnants | IC moyen du score | t-stat IC |',
+              '|---|---|---|---|---|---|---|---|']
+    for name, part in (('Dev 2010-2018', dev), ('Hors echantillon 2019-2026', oos)):
+        ex, ic = part['vs_univ'].dropna(), part['score_ic'].dropna()
+        lines.append(f"| {name} | {len(ex)} | {(1 + ex).prod() ** (12 / len(ex)) - 1:+.1%} | "
+                     f"{ex.mean() / ex.std() * 12 ** 0.5:.2f} | {ex.mean() / ex.std() * len(ex) ** 0.5:.2f} | "
+                     f"{(ex > 0).mean():.0%} | {ic.mean():+.4f} | {ic.mean() / ic.std() * len(ic) ** 0.5:.2f} |")
+    lines += ['', '| Annee | Nos actions | Action moyenne | SPY | Ecart vs action moyenne | Ecart action moyenne vs SPY |',
+              '|---|---|---|---|---|---|']
+    for y, g in res.groupby(res.index.year):
+        lo, un, sp = ((1 + g[c]).prod() - 1 for c in ('long', 'univ', 'spy'))
+        lines.append(f'| {y} | {lo:+.1%} | {un:+.1%} | {sp:+.1%} | {lo - un:+.1%} | {un - sp:+.1%} |')
+    if block_ics is not None:
+        lines += ['', '### IC de chaque bloc : dev 2010-2018 vs hors echantillon 2019-2026', '',
+                  '| Bloc | IC dev | t dev | IC 2019-2026 | t 2019-2026 |', '|---|---|---|---|---|']
+        for feat, r in block_ics.iterrows():
+            lines.append(f"| {feat} | {r['ic_dev']:+.4f} | {r['t_dev']:+.2f} | {r['ic_oos']:+.4f} | {r['t_oos']:+.2f} |")
     lines += ['', '## Limites', '',
               '- Biais du survivant : entreprises radiees absentes (ni ticker SEC ni prix Yahoo). Resultats flattes.',
               '- Donnees XBRL frames : derniere valeur deposee, une correction posterieure peut fuiter (decalage 90 j).',
@@ -88,7 +107,11 @@ def main():
     tickers, shares, fund, purch, close, _ = load()
     panel = build_panel(close, tickers, shares, fund, purch)
     res = backtest(panel, spy_monthly())
-    text = build_report(res, yearly_weights(panel))
+    dev_ic = information_coefficients(panel, '2018-12-31', RETAINED).set_index('feature')
+    oos_ic = information_coefficients(panel, '2100-01-01', RETAINED, start=OOS_START).set_index('feature')
+    block_ics = pd.DataFrame({'ic_dev': dev_ic['ic_moyen'], 't_dev': dev_ic['t_stat'],
+                              'ic_oos': oos_ic['ic_moyen'], 't_oos': oos_ic['t_stat']}).loc[RETAINED]
+    text = build_report(res, yearly_weights(panel), block_ics)
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(text)
     if os.environ.get('GITHUB_STEP_SUMMARY'):

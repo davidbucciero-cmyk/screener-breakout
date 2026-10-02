@@ -64,7 +64,11 @@ def backtest(panel, spy_monthly, cost_bps=COST_BPS):
         spy = spy_monthly.get(d + pd.offsets.MonthEnd(0), np.nan)
         cost = 2 * turnover * cost_bps / 1e4
         hedged = r_long - spy - cost - 2 * SPY_COST_BPS / 1e4 * turnover - BORROW / 12
-        out.append({'date': d, 'long': r_long - cost, 'hedged': hedged, 'spy': spy,
+        univ = g['fwd_ret'].mean()  # action moyenne de l'univers, a poids egal (l'adversaire des IC)
+        sc = score.rank()
+        score_ic = sc.corr(g['fwd_ret'].rank()) if g['fwd_ret'].notna().sum() > 30 else np.nan
+        out.append({'date': d, 'long': r_long - cost, 'hedged': hedged, 'spy': spy, 'univ': univ,
+                    'vs_univ': r_long - cost - univ, 'score_ic': score_ic,
                     'turnover': turnover, 'sans_prix': int(top['fwd_ret'].isna().sum())})
         hits.append(float((top['fwd_ret'] > spy).mean()))
         held.append(len(top))
