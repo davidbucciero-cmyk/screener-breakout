@@ -7,7 +7,7 @@ Avec 11 features testees, un |t| > 2.87 est requis pour ecarter le hasard.
 
 - Tickers SEC (NYSE + Nasdaq, aujourd'hui) : 7675
 - Tickers avec prix Yahoo : 7671
-- Tickers sans prix (non telecharges ce run) : 4
+- Tickers sans prix (non telecharges ce run) : 0
 - Actions dans l'univers > 2 Md$ par mois (moyenne dev) : 792
 - Achats d'initiés extraits (toutes entreprises) : 603462
 - Biais du survivant : les entreprises radiees n'ont plus de ticker SEC ni de prix Yahoo : absentes du panel
