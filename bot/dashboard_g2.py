@@ -186,9 +186,12 @@ def render(data):
 
 
 def build(daily=None):
+    """Ecrit dashboard.html (piece jointe des emails) et dashboard.json (lu par l'artefact de suivi)."""
     DIR.mkdir(exist_ok=True)
+    data = payload(daily)
+    (DIR / 'dashboard.json').write_text(json.dumps(data, ensure_ascii=False, default=str), encoding='utf-8')
     path = DIR / 'dashboard.html'
-    path.write_text(render(payload(daily)), encoding='utf-8')
+    path.write_text(render(data), encoding='utf-8')
     return path
 
 

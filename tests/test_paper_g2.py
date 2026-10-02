@@ -77,6 +77,9 @@ def test_dashboard_renders_after_a_trading_day(market, monkeypatch, tmp_path):
     P.run(FakeBroker(), FakeGitHub(), now=market)
     html = Dsh.build().read_text()
     assert 'G2-19' in html and 'const D = {' in html and '__DATA__' not in html
+    import json
+    data = json.loads((tmp_path / 'dashboard.json').read_text())
+    assert [e['nom'] for e in data['enveloppes']] == ['G2-19', 'G2-25', 'G2-40']
 
 
 def test_dashboard_renders_before_first_day(monkeypatch, tmp_path):
