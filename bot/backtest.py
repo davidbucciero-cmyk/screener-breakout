@@ -1,5 +1,6 @@
 """Backtest et gate d'acceptation. Le gate est du code : aucun modele ne note sa propre strategie."""
 import math
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -28,12 +29,18 @@ def metrics(r, trades):
     }
 
 
-def gate(m):
+def t_threshold(n_tests, base=GATE['t_stat']):
+    """Seuil de t-stat corrige de Bonferroni : plus on essaie de strategies, plus il faut de preuve."""
+    alpha = 2 * (1 - NormalDist().cdf(base))
+    return NormalDist().inv_cdf(1 - alpha / (2 * n_tests))
+
+
+def gate(m, n_tests=1):
     checks = {
         'sharpe': m['sharpe'] > GATE['sharpe'],
         'max_drawdown': m['max_drawdown'] > GATE['max_drawdown'],
         'hit_rate': m['hit_rate'] > GATE['hit_rate'],
-        't_stat': m['t_stat'] > GATE['t_stat'],
+        't_stat': m['t_stat'] > t_threshold(n_tests),
     }
     checks = {k: bool(v) for k, v in checks.items()}  # NaN -> False
     checks['passed'] = all(checks.values())

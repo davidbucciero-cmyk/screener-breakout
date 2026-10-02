@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bot.backtest import GATE, gate, metrics, regimes, split
+from bot.backtest import GATE, gate, metrics, regimes, split, t_threshold
 from bot.data import fetch_1h
 from bot.strategies import FEE_BPS, SLIPPAGE_BPS, run_strategies
 
@@ -31,6 +31,7 @@ def _regime_table(reg):
 def build_report(df, oos_years=2):
     oos_start = df.index[-1] - pd.Timedelta(days=365 * oos_years)
     results = run_strategies(df)
+    n_tests = sum(not k.startswith('Reference') for k in results)
     head = '| Strategie | Rdt annuel | Sharpe | t-stat | Max DD | Taux reussite | Trades | Expo |\n|---|---|---|---|---|---|---|---|'
     lines = [
         '# Backtest BTC/USD 1h',
@@ -39,7 +40,8 @@ def build_report(df, oos_years=2):
         f'Couts : {FEE_BPS:.0f} bps de frais + {SLIPPAGE_BPS:.0f} bps de slippage par cote.',
         f'Hors echantillon (gate) : a partir du {oos_start:%Y-%m-%d}. '
         f"Gate : Sharpe > {GATE['sharpe']}, max DD > {GATE['max_drawdown']:.0%}, "
-        f"taux de reussite > {GATE['hit_rate']:.0%}, t-stat > {GATE['t_stat']}.",
+        f"taux de reussite > {GATE['hit_rate']:.0%}, t-stat > {t_threshold(n_tests):.2f} "
+        f"({GATE['t_stat']} corrige de Bonferroni pour {n_tests} strategies testees).",
         '',
         '## Hors echantillon', '', head,
     ]
@@ -51,7 +53,7 @@ def build_report(df, oos_years=2):
         lines.append(f'| {name} ' + _fmt(m))
         dev_rows.append(f'| {name} ' + _fmt(metrics(r_dev, t_dev)))
         if not name.startswith('Reference'):
-            g = gate(m)
+            g = gate(m, n_tests)
             failed = [k for k in GATE if not g[k]]
             verdicts.append(f"- **{name}** : {'PASSE' if g['passed'] else 'ECHOUE'}"
                             + (f" (echoue sur : {', '.join(failed)})" if failed else ''))

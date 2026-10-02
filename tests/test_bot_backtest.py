@@ -76,3 +76,37 @@ def test_metrics_and_gate():
     m_bad = dict(m, max_drawdown=-0.2)
     assert gate(m_bad)['passed'] is False
     assert set(GATE) <= set(g)
+
+
+def _random_df(n=24 * 500, seed=2):
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range('2023-01-01', periods=n, freq='h', tz='UTC')
+    close = pd.Series(20000 * np.exp(np.cumsum(rng.normal(0.00005, 0.006, n))), index=idx)
+    return pd.DataFrame({'open': close.shift(1).fillna(close.iloc[0]), 'high': close * 1.002,
+                         'low': close * 0.998, 'close': close, 'volume': 1.0})
+
+
+@pytest.mark.parametrize('name', ['D', 'E', 'F'])
+def test_new_strategies_ignore_future(name):
+    from bot.strategies import NEW_STRATEGIES
+    df = _random_df()
+    cut = len(df) - 24 * 40
+    tampered = df.copy()
+    tampered.iloc[cut:] *= 3
+    r1, _ = NEW_STRATEGIES[name](df)
+    r2, _ = NEW_STRATEGIES[name](tampered)
+    # Le rendement de la bougie `cut` elle-meme change (prix falsifie) ; tout ce qui precede doit etre identique.
+    pd.testing.assert_series_equal(r1.iloc[:cut], r2.iloc[:cut])
+
+
+def test_rsi2_extremes():
+    from bot.strategies import rsi
+    up = pd.Series(np.arange(1, 50, dtype=float))
+    assert rsi(up, 2).iloc[-1] == pytest.approx(100.0)
+    assert rsi(-up + 100, 2).iloc[-1] == pytest.approx(0.0)
+
+
+def test_gate_tightens_t_stat_with_number_of_tests():
+    from bot.backtest import t_threshold
+    assert t_threshold(1) == pytest.approx(2.0, abs=0.05)
+    assert t_threshold(6) > t_threshold(3) > 2.0
