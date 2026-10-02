@@ -1,0 +1,22 @@
+name: Sonde des sources (Quiver, FMP)
+
+on:
+  push:
+    branches: [claude/sleepy-faraday-w7p1hk]
+    paths: ['bot/equities/probe_sources.py', '.github/workflows/probe_sources.yml']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      QUIVER_API_KEY: ${{ secrets.QUIVER_API_KEY }}
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas requests
+      - run: python -m bot.equities.probe_sources
