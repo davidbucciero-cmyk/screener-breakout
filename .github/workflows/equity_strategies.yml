@@ -1,0 +1,46 @@
+name: Actions US - strategies par score de themes
+
+on:
+  push:
+    branches: [claude/sleepy-faraday-w7p1hk]
+    paths: ['bot/equities/score_strategies.py', '.github/workflows/equity_strategies.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: equity-strategies
+  cancel-in-progress: true
+
+jobs:
+  strategies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install pandas numpy requests yfinance pyarrow
+      - name: Restaurer le cache des donnees brutes (SEC, Yahoo)
+        uses: actions/cache/restore@v4
+        with:
+          path: bot/equities/cache
+          key: equities-raw-v2-${{ github.run_id }}
+          restore-keys: |
+            equities-raw-v2-
+            equities-raw-v1-
+      - name: Strategies S1, S2, S4 et overlay de vol
+        run: python -m bot.equities.score_strategies
+      - name: Sauver le cache meme en cas d'echec
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: bot/equities/cache
+          key: equities-raw-v2-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: equity-strategies
+          path: |
+            bot/reports/equities_strategies.md
+            bot/reports/equities_strategies.csv
