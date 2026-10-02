@@ -19,8 +19,10 @@ SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
 
 
 def _closes(dfs):
-    hourly = pd.DataFrame({s: d['close'] for s, d in dfs.items()}).dropna()
-    daily = hourly.resample('1D').last().dropna()
+    """Clotures 1h et journalieres. Une crypto pas encore cotee reste NaN (jamais selectionnee)."""
+    hourly = pd.DataFrame({s: d['close'] for s, d in dfs.items()})
+    hourly = hourly[hourly.iloc[:, 0].notna()]  # calendrier du premier actif (BTC)
+    daily = hourly.resample('1D').last().dropna(how='all')
     return hourly, daily
 
 
@@ -28,7 +30,7 @@ def _apply(hourly, w_daily):
     """Rendements nets 1h du portefeuille, trades par actif, poids 1h."""
     key = hourly.index.floor('D') - pd.Timedelta(days=1)
     w = pd.DataFrame(w_daily.reindex(key).to_numpy(), index=hourly.index, columns=hourly.columns).fillna(0.0)
-    ret = hourly.pct_change().fillna(0.0)
+    ret = hourly.pct_change(fill_method=None).fillna(0.0)
     per_asset = w * ret - w.diff().abs().fillna(w.abs()) * COST
     r = per_asset.sum(axis=1)
     rows = []
@@ -42,15 +44,18 @@ def _apply(hourly, w_daily):
     return r, trades.sort_values('entry_time').reset_index(drop=True), w
 
 
-def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None):
+def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None):
     """Chaque dimanche : les top_k cryptos au meilleur rendement `lookback` j, si ce rendement est > 0.
 
     Chaque ligne pese 1/top_k, reduite pour viser 40 % de vol. risk_off (booleen quotidien, connu a
     la cloture du jour) force le cash le lendemain, meme en cours de semaine.
     """
     hourly, daily = _closes(dfs)
-    mom = daily / daily.shift(lookback) - 1
-    vol = daily.pct_change().rolling(30).std() * math.sqrt(365)
+    if lookbacks:  # moyenne des rendements sur plusieurs horizons (tous requis)
+        mom = sum(daily / daily.shift(k) - 1 for k in lookbacks) / len(lookbacks)
+    else:
+        mom = daily / daily.shift(lookback) - 1
+    vol = daily.pct_change(fill_method=None).rolling(30).std() * math.sqrt(365)
     rank = mom.rank(axis=1, ascending=False, method='first')
     sel = (rank <= top_k) & (mom > 0) & (vol > 0)
     w = (sel * (TARGET_VOL / vol).clip(upper=1.0) / top_k).fillna(0.0)
