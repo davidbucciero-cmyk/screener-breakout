@@ -1,2 +1,3 @@
 date,spot_close,perp_close,exec_spot_close,basis_bps,trading_allowed,prev_position,new_position,turnover,equity
 2026-10-01,84397.0,84309.0,84798.0,-10.426910909155929,True,0.0,0.0,0.0,10000.0
+2026-10-02,84861.7,84808.0,84894.5,-6.32794299430639,True,0.0,0.0,0.0,10000.0
