@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-10-02T08:11:57.970596+00:00",
+  "initial_cash": 10000.0,
+  "current_equity": 10000.0,
+  "max_equity": 10000.0,
+  "current_drawdown": 0.0,
+  "total_return": 0.0,
+  "current_position": 0.0,
+  "days_tracked": 2,
+  "last_date": "2026-10-02",
+  "circuit_breaker": {
+    "halted": false,
+    "halt_drawdown": 0.2,
+    "resume_drawdown": 0.1
+  },
+  "rows": [
+    {
+      "date": "2026-10-01",
+      "spot_close": 84397.0,
+      "perp_close": 84309.0,
+      "exec_spot_close": 84798.0,
+      "basis_bps": -10.426910909155929,
+      "trading_allowed": true,
+      "prev_position": 0.0,
+      "new_position": 0.0,
+      "turnover": 0.0,
+      "equity": 10000.0
+    },
+    {
+      "date": "2026-10-02",
+      "spot_close": 84861.7,
+      "perp_close": 84808.0,
+      "exec_spot_close": 84894.5,
+      "basis_bps": -6.32794299430639,
+      "trading_allowed": true,
+      "prev_position": 0.0,
+      "new_position": 0.0,
+      "turnover": 0.0,
+      "equity": 10000.0
+    }
+  ],
+  "backtest_context": {
+    "approach": "Signal calcule sur Kraken (spot+perpetuel) ; jambe spot executee sur OKX (moins cher)",
+    "oos_sharpe": 1.298,
+    "n_folds": 3,
+    "window_days": 721,
+    "round_trip_bps": 12.0,
+    "vol_threshold_bps": 12.0,
+    "no_trade_band": 0.5
+  }
+}

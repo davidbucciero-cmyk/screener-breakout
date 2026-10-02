@@ -1,0 +1,475 @@
+<title>Carry BTC Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: header -> 5 stat tiles -> two line charts (equity, basis) -> daily
+     log table -> footer with the validated backtest context. One accent
+     (blue) for lines/links; a fixed status pair (green=long/good, red=short/
+     critical) for position state, never re-themed; a blue<->red diverging
+     pair for the basis chart (positive vs negative), gray midline at zero. */
+  :root {
+    --bg: #f9f9f7;
+    --surface: #fcfcfb;
+    --border: rgba(11,11,11,0.10);
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --accent: #2a78d6;
+    --accent-wash: rgba(42,120,214,0.10);
+    --good: #0ca30c;
+    --critical: #d03b3b;
+    --warning: #fab219;
+    --div-pos: #2a78d6;
+    --div-neg: #e34948;
+    --div-mid: #f0efec;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d0d0d;
+      --surface: #1a1a19;
+      --border: rgba(255,255,255,0.10);
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --ink-muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --accent: #3987e5;
+      --accent-wash: rgba(57,135,229,0.14);
+      --div-pos: #3987e5;
+      --div-neg: #e66767;
+      --div-mid: #383835;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --border: rgba(255,255,255,0.10);
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --accent: #3987e5;
+    --accent-wash: rgba(57,135,229,0.14);
+    --div-pos: #3987e5;
+    --div-neg: #e66767;
+    --div-mid: #383835;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Sora, system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding-inline: 20px;
+    padding-block: 28px 48px;
+    max-width: 980px;
+    margin-inline: auto;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  header { margin-bottom: 28px; }
+  header .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; text-wrap: balance; }
+  header p.sub { color: var(--ink-2); font-size: 14.5px; margin: 0; max-width: 62ch; line-height: 1.5; }
+  header .meta { color: var(--ink-muted); font-size: 12.5px; margin-top: 10px; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .tile { background: var(--surface); padding: 16px; min-width: 0; }
+  .tile .label { font-size: 12px; color: var(--ink-muted); margin: 0 0 8px; }
+  .tile .value { font-size: 22px; font-weight: 600; margin: 0; line-height: 1.1; }
+  .tile .delta { font-size: 12.5px; margin-top: 6px; font-family: "IBM Plex Mono", monospace; }
+  .tile .delta.up { color: var(--good); }
+  .tile .delta.down { color: var(--critical); }
+  .tile .delta.flat { color: var(--ink-muted); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+  .pill.long { background: rgba(12,163,12,0.12); color: var(--good); }
+  .pill.long::before { background: var(--good); }
+  .pill.short { background: rgba(208,59,59,0.12); color: var(--critical); }
+  .pill.short::before { background: var(--critical); }
+  .pill.flat { background: rgba(137,135,129,0.14); color: var(--ink-2); }
+  .pill.flat::before { background: var(--ink-muted); }
+  .pill.ok { background: rgba(12,163,12,0.12); color: var(--good); }
+  .pill.ok::before { background: var(--good); }
+  .pill.halted { background: rgba(208,59,59,0.12); color: var(--critical); }
+  .pill.halted::before { background: var(--critical); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 18px 8px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .card .card-sub { font-size: 12.5px; color: var(--ink-muted); margin: 0 0 12px; }
+  .chart-wrap { position: relative; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .axis-label { font-size: 10.5px; fill: var(--ink-muted); font-family: "IBM Plex Mono", monospace; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .area-fill { opacity: 0.10; }
+  .end-dot { stroke: var(--surface); stroke-width: 2; }
+  .hover-x { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0; pointer-events: none; }
+  .hit-rect { fill: transparent; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.08s;
+    background: var(--ink); color: var(--bg);
+    border-radius: 7px; padding: 7px 10px; font-size: 12px;
+    font-family: "IBM Plex Mono", monospace; white-space: nowrap;
+    transform: translate(-50%, -100%); top: -10px; z-index: 5;
+  }
+  .tooltip .t-date { color: var(--ink-muted); font-size: 11px; margin-bottom: 3px; }
+  .tooltip .t-row { display: flex; gap: 8px; justify-content: space-between; }
+  .tooltip .t-row .t-k { color: color-mix(in srgb, var(--bg) 60%, var(--ink)); }
+  .tooltip .t-row .t-v { font-weight: 600; }
+
+  .sparse-note { font-size: 12px; color: var(--ink-muted); margin: 0 0 10px; font-style: italic; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td { font-family: "IBM Plex Mono", monospace; }
+  tbody tr:last-child td { border-bottom: none; }
+  .table-wrap { overflow-x: auto; }
+
+  footer {
+    margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--border);
+    font-size: 12.5px; color: var(--ink-muted); line-height: 1.6;
+  }
+  footer strong { color: var(--ink-2); }
+  footer .badge {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    background: var(--accent-wash); color: var(--accent); padding: 1px 7px; border-radius: 5px;
+  }
+</style>
+
+<header>
+  <p class="eyebrow">Etape 22 &middot; paper trading</p>
+  <h1>Carry BTC Monitor</h1>
+  <p class="sub">Spread neutre au marche entre le perpetuel et le spot Kraken : parie sur la convergence du basis, pas sur le sens du BTC. Signal calcule sur Kraken, jambe spot executee sur OKX.</p>
+  <p class="meta mono" id="meta-line">chargement…</p>
+</header>
+
+<section class="stats" id="stats"></section>
+
+<div class="card">
+  <h2>Equity</h2>
+  <p class="card-sub">Capital paper (depart $10 000), une bougie par jour</p>
+  <p class="sparse-note" id="equity-sparse" hidden></p>
+  <div class="chart-wrap"><svg class="chart" id="equity-chart" viewBox="0 0 860 220"></svg></div>
+</div>
+
+<div class="card">
+  <h2>Basis (perpetuel vs spot, Kraken)</h2>
+  <p class="card-sub">Ecart en points de base &middot; la porte de volatilite coupe le trading sous &plusmn;<span id="vol-th-label">—</span> bps d'ecart-type glissant</p>
+  <div class="chart-wrap"><svg class="chart" id="basis-chart" viewBox="0 0 860 220"></svg></div>
+</div>
+
+<div class="card">
+  <h2>Journal quotidien</h2>
+  <p class="card-sub">Une ligne par jour execute (daily_log.csv)</p>
+  <div class="table-wrap">
+    <table id="log-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Spot (Kraken)</th>
+          <th>Perp (Kraken)</th>
+          <th>Spot exec (OKX)</th>
+          <th>Basis (bps)</th>
+          <th>Position</th>
+          <th>Turnover</th>
+          <th>Equity</th>
+        </tr>
+      </thead>
+      <tbody id="log-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<footer id="footer-note">chargement du contexte de validation…</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  function fmtUSD(v) {
+    return "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  }
+  function fmtPct(v) {
+    var s = (v * 100).toFixed(2) + "%";
+    return v > 0 ? "+" + s : s;
+  }
+  function fmtBps(v) {
+    var s = v.toFixed(1);
+    return (v > 0 ? "+" : "") + s + " bps";
+  }
+  function positionLabel(p) {
+    if (Math.abs(p) < 1e-9) return { text: "Plat", cls: "flat" };
+    return p > 0 ? { text: "Long spread (" + p.toFixed(2) + ")", cls: "long" } : { text: "Short spread (" + p.toFixed(2) + ")", cls: "short" };
+  }
+
+  function renderStats(data) {
+    var stats = document.getElementById("stats");
+    var pos = positionLabel(data.current_position);
+    var breaker = data.circuit_breaker || {};
+    var lastRow = data.rows[data.rows.length - 1];
+    var basis = lastRow ? lastRow.basis_bps : null;
+
+    var tiles = [
+      {
+        label: "Equity paper",
+        value: fmtUSD(data.current_equity),
+        delta: fmtPct(data.total_return) + " vs capital initial",
+        deltaCls: data.total_return > 0.0001 ? "up" : data.total_return < -0.0001 ? "down" : "flat",
+      },
+      { label: "Position", valueHtml: '<span class="pill ' + pos.cls + '">' + pos.text + "</span>" },
+      {
+        label: "Basis aujourd'hui",
+        value: basis === null ? "—" : fmtBps(basis),
+        valueMono: true,
+      },
+      {
+        label: "Coupe-circuit",
+        valueHtml: breaker.halted
+          ? '<span class="pill halted">Actif (a plat force)</span>'
+          : '<span class="pill ok">Inactif</span>',
+      },
+      { label: "Jours suivis", value: String(data.days_tracked) },
+    ];
+
+    stats.innerHTML = "";
+    tiles.forEach(function (t) {
+      var el = document.createElement("div");
+      el.className = "tile";
+      var valueHtml = t.valueHtml || ('<p class="value' + (t.valueMono ? " mono tabular" : "") + '">' + t.value + "</p>");
+      el.innerHTML =
+        '<p class="label">' + t.label + "</p>" +
+        (t.valueHtml ? '<div class="value">' + t.valueHtml + "</div>" : valueHtml) +
+        (t.delta ? '<p class="delta ' + t.deltaCls + ' tabular">' + t.delta + "</p>" : "");
+      stats.appendChild(el);
+    });
+
+    document.getElementById("meta-line").textContent =
+      "Derniere execution : " + (data.last_date || "—") + " · genere " + new Date(data.generated_at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+    document.getElementById("vol-th-label").textContent = data.backtest_context.vol_threshold_bps;
+  }
+
+  // ---- Chart helpers (shared line-chart renderer with crosshair tooltip) ----
+  var W = 860, H = 220, PAD_L = 46, PAD_R = 12, PAD_T = 14, PAD_B = 24;
+
+  function niceTicks(min, max, count) {
+    if (min === max) { min -= 1; max += 1; }
+    var range = max - min;
+    var step = Math.pow(10, Math.floor(Math.log10(range / count)));
+    var err = (range / count) / step;
+    if (err >= 7.5) step *= 10; else if (err >= 3.5) step *= 5; else if (err >= 1.5) step *= 2;
+    var niceMin = Math.floor(min / step) * step;
+    var niceMax = Math.ceil(max / step) * step;
+    var ticks = [];
+    for (var v = niceMin; v <= niceMax + step / 2; v += step) ticks.push(v);
+    return { ticks: ticks, min: niceMin, max: niceMax };
+  }
+
+  function renderLineChart(opts) {
+    // opts: svgId, rows, xKey, yKey, color, zeroLine (bool), fmtY, fmtTooltip
+    var svg = document.getElementById(opts.svgId);
+    var rows = opts.rows;
+    if (!rows.length) { svg.innerHTML = ""; return; }
+
+    var values = rows.map(function (r) { return r[opts.yKey]; });
+    var yMin = Math.min.apply(null, values), yMax = Math.max.apply(null, values);
+    if (opts.zeroLine) { yMin = Math.min(yMin, 0); yMax = Math.max(yMax, 0); }
+    var pad = (yMax - yMin) * 0.12 || Math.abs(yMax || 1) * 0.1 || 1;
+    var nt = niceTicks(yMin - pad, yMax + pad, 4);
+
+    var n = rows.length;
+    function xPos(i) { return n === 1 ? (PAD_L + (W - PAD_L - PAD_R) / 2) : PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R); }
+    function yPos(v) { return PAD_T + (1 - (v - nt.min) / (nt.max - nt.min)) * (H - PAD_T - PAD_B); }
+
+    var svgns = "http://www.w3.org/2000/svg";
+    var parts = [];
+
+    nt.ticks.forEach(function (t) {
+      var y = yPos(t);
+      parts.push('<line class="gridline" x1="' + PAD_L + '" x2="' + (W - PAD_R) + '" y1="' + y + '" y2="' + y + '"/>');
+      parts.push('<text class="axis-label" x="' + (PAD_L - 8) + '" y="' + (y + 3) + '" text-anchor="end">' + opts.fmtY(t) + "</text>");
+    });
+
+    if (opts.zeroLine) {
+      var y0 = yPos(0);
+      parts.push('<line class="baseline" x1="' + PAD_L + '" x2="' + (W - PAD_R) + '" y1="' + y0 + '" y2="' + y0 + '"/>');
+    }
+
+    rows.forEach(function (r, i) {
+      parts.push('<text class="axis-label" x="' + xPos(i) + '" y="' + (H - 6) + '" text-anchor="middle">' + r[opts.xKey].slice(5) + "</text>");
+    });
+
+    if (opts.diverging) {
+      // two polylines, split at sign changes, colored by sign, with a soft area fill
+      var segs = [];
+      var cur = null;
+      rows.forEach(function (r, i) {
+        var sign = r[opts.yKey] >= 0 ? "pos" : "neg";
+        if (!cur || cur.sign !== sign) { if (cur) segs.push(cur); cur = { sign: sign, pts: [] }; if (i > 0) cur.pts.push([xPos(i - 1), yPos(rows[i - 1][opts.yKey])]); }
+        cur.pts.push([xPos(i), yPos(r[opts.yKey])]);
+      });
+      if (cur) segs.push(cur);
+      segs.forEach(function (s) {
+        var color = s.sign === "pos" ? "var(--div-pos)" : "var(--div-neg)";
+        var d = s.pts.map(function (p, i) { return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
+        parts.push('<path class="series-line" d="' + d + '" stroke="' + color + '"/>');
+      });
+    } else {
+      var d = rows.map(function (r, i) { return (i === 0 ? "M" : "L") + xPos(i).toFixed(1) + "," + yPos(r[opts.yKey]).toFixed(1); }).join(" ");
+      var areaD = d + " L" + xPos(n - 1).toFixed(1) + "," + yPos(nt.min).toFixed(1) + " L" + xPos(0).toFixed(1) + "," + yPos(nt.min).toFixed(1) + " Z";
+      parts.push('<path class="area-fill" d="' + areaD + '" fill="' + opts.color + '"/>');
+      parts.push('<path class="series-line" d="' + d + '" stroke="' + opts.color + '"/>');
+    }
+
+    rows.forEach(function (r, i) {
+      var isLast = i === n - 1;
+      var color = opts.diverging ? (r[opts.yKey] >= 0 ? "var(--div-pos)" : "var(--div-neg)") : opts.color;
+      parts.push('<circle class="end-dot" cx="' + xPos(i) + '" cy="' + yPos(r[opts.yKey]) + '" r="' + (isLast ? 4.5 : 3) + '" fill="' + color + '"/>');
+    });
+
+    parts.push('<line class="hover-x" id="' + opts.svgId + '-hoverx" x1="0" x2="0" y1="' + PAD_T + '" y2="' + (H - PAD_B) + '"/>');
+    parts.push('<rect class="hit-rect" x="0" y="0" width="' + W + '" height="' + H + '"/>');
+
+    svg.innerHTML = parts.join("");
+
+    var tooltip = document.createElement("div");
+    tooltip.className = "tooltip";
+    svg.parentElement.appendChild(tooltip);
+    var hoverLine = document.getElementById(opts.svgId + "-hoverx");
+
+    function onMove(evt) {
+      var rect = svg.getBoundingClientRect();
+      var relX = ((evt.clientX - rect.left) / rect.width) * W;
+      var i = Math.round(((relX - PAD_L) / (W - PAD_L - PAD_R)) * (n - 1));
+      i = Math.max(0, Math.min(n - 1, i));
+      var r = rows[i];
+      var px = xPos(i);
+      hoverLine.setAttribute("x1", px); hoverLine.setAttribute("x2", px);
+      hoverLine.style.opacity = 1;
+
+      tooltip.innerHTML = "";
+      var dateEl = document.createElement("div");
+      dateEl.className = "t-date"; dateEl.textContent = r[opts.xKey];
+      tooltip.appendChild(dateEl);
+      var row = document.createElement("div");
+      row.className = "t-row";
+      var k = document.createElement("span"); k.className = "t-k"; k.textContent = opts.tooltipLabel;
+      var v = document.createElement("span"); v.className = "t-v"; v.textContent = opts.fmtY(r[opts.yKey]);
+      row.appendChild(k); row.appendChild(v);
+      tooltip.appendChild(row);
+
+      var leftPct = (px / W) * 100;
+      tooltip.style.left = leftPct + "%";
+      tooltip.style.top = (yPos(r[opts.yKey]) / H) * 100 + "%";
+      tooltip.style.opacity = 1;
+    }
+    function onLeave() { hoverLine.style.opacity = 0; tooltip.style.opacity = 0; }
+
+    svg.addEventListener("pointermove", onMove);
+    svg.addEventListener("pointerleave", onLeave);
+  }
+
+  function renderTable(data) {
+    var tbody = document.getElementById("log-tbody");
+    tbody.innerHTML = "";
+    data.rows.slice().reverse().forEach(function (r) {
+      var tr = document.createElement("tr");
+      var pos = positionLabel(r.new_position);
+      function cell(text, isFirst) {
+        var td = document.createElement("td");
+        td.textContent = text;
+        if (isFirst) td.classList.remove("mono");
+        tr.appendChild(td);
+      }
+      cell(r.date, true);
+      cell(fmtUSD(r.spot_close));
+      cell(fmtUSD(r.perp_close));
+      cell(fmtUSD(r.exec_spot_close));
+      cell(fmtBps(r.basis_bps));
+      var posTd = document.createElement("td");
+      posTd.innerHTML = '<span class="pill ' + pos.cls + '">' + pos.text + "</span>";
+      tr.appendChild(posTd);
+      cell(r.turnover.toFixed(3));
+      cell(fmtUSD(r.equity));
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderFooter(data) {
+    var ctx = data.backtest_context;
+    document.getElementById("footer-note").innerHTML =
+      "<strong>Suivi paper, pas un historique de performance :</strong> " + data.days_tracked + " jour(s) de donnees reelles pour l'instant — trop peu pour juger la strategie elle-meme. " +
+      "Le contexte de validation (walk-forward, pas ce suivi live) : <span class='badge'>Sharpe OOS " + ctx.oos_sharpe.toFixed(2) + "</span> sur " + ctx.n_folds + " folds (" + ctx.window_days + " jours), " +
+      ctx.approach + ", cout round-trip " + ctx.round_trip_bps + " bps. Aucun ordre reel n'est jamais envoye — paper trading strict.";
+  }
+
+  function boot(data) {
+    renderStats(data);
+    var sparse = document.getElementById("equity-sparse");
+    if (data.days_tracked < 10) {
+      sparse.hidden = false;
+      sparse.textContent = "Seulement " + data.days_tracked + " jour(s) suivi(s) — la courbe s'etoffera au fil des executions quotidiennes.";
+    }
+    renderLineChart({
+      svgId: "equity-chart", rows: data.rows, xKey: "date", yKey: "equity",
+      color: "var(--accent)", fmtY: function (v) { return "$" + Math.round(v).toLocaleString("en-US"); },
+      tooltipLabel: "Equity",
+    });
+    renderLineChart({
+      svgId: "basis-chart", rows: data.rows, xKey: "date", yKey: "basis_bps",
+      diverging: true, zeroLine: true, fmtY: function (v) { return v.toFixed(1) + " bps"; },
+      tooltipLabel: "Basis",
+    });
+    renderTable(data);
+    renderFooter(data);
+  }
+
+  fetch("data.json")
+    .then(function (r) { return r.json(); })
+    .then(boot)
+    .catch(function (err) {
+      document.getElementById("meta-line").textContent = "Erreur de chargement des donnees : " + err;
+    });
+})();
+</script>

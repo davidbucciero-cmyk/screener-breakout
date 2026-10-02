@@ -1,0 +1,115 @@
+"""Genere les donnees pour le dashboard du bot de paper trading carry BTC
+(crypto_quant/btc_carry_dashboard/index.html, etape 22).
+
+Tout sort de l'etat reel persiste par btc_carry_paper_bot.py (daily_log.csv,
+position.json, breaker.json) - aucun chiffre invente. Les stats de backtest
+(Sharpe walk-forward etc.) sont les resultats deja documentes dans
+README.md, etape 22, repris ici en dur pour contexte (ne proviennent pas
+d'un recalcul a chaque generation).
+
+Usage: python -m crypto_quant.btc_carry_dashboard
+"""
+import json
+import os
+
+import pandas as pd
+
+STATE_DIR = os.path.join(os.path.dirname(__file__), "btc_carry_paper_bot_state")
+OUT_DIR = os.path.join(os.path.dirname(__file__), "btc_carry_dashboard")
+
+# Resultats de validation deja documentes dans README.md (etape 22 octies) -
+# contexte affiche a cote du suivi live, pas recalcule ici.
+BACKTEST_CONTEXT = {
+    "approach": "Signal calcule sur Kraken (spot+perpetuel) ; jambe spot executee sur OKX (moins cher)",
+    "oos_sharpe": 1.298,
+    "n_folds": 3,
+    "window_days": 721,
+    "round_trip_bps": 12.0,
+    "vol_threshold_bps": 12.0,
+    "no_trade_band": 0.5,
+}
+
+
+def load_daily_log() -> pd.DataFrame:
+    path = os.path.join(STATE_DIR, "daily_log.csv")
+    if not os.path.exists(path):
+        return pd.DataFrame(
+            columns=[
+                "date", "spot_close", "perp_close", "exec_spot_close", "basis_bps",
+                "trading_allowed", "prev_position", "new_position", "turnover", "equity",
+            ]
+        )
+    return pd.read_csv(path, parse_dates=["date"])
+
+
+def load_json(name: str) -> dict:
+    path = os.path.join(STATE_DIR, name)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
+
+
+def build_dashboard_data() -> dict:
+    log = load_daily_log()
+    breaker = load_json("breaker.json")
+    position = load_json("position.json")
+
+    initial_cash = 10_000.0
+    current_equity = float(position.get("cash_equity", initial_cash))
+    current_position = float(position.get("prev_position", 0.0))
+
+    equity_series = log[["date", "equity"]].copy()
+    equity_series["date"] = equity_series["date"].dt.strftime("%Y-%m-%d")
+    peak = log["equity"].cummax() if not log.empty else pd.Series(dtype=float)
+    drawdown = (log["equity"] - peak) / peak if not log.empty else pd.Series(dtype=float)
+
+    max_equity = float(log["equity"].max()) if not log.empty else current_equity
+    current_drawdown = float(drawdown.iloc[-1]) if not drawdown.empty else 0.0
+    total_return = current_equity / initial_cash - 1.0
+
+    rows = []
+    for _, r in log.iterrows():
+        rows.append(
+            {
+                "date": r["date"].strftime("%Y-%m-%d"),
+                "spot_close": float(r["spot_close"]),
+                "perp_close": float(r["perp_close"]),
+                "exec_spot_close": float(r["exec_spot_close"]),
+                "basis_bps": float(r["basis_bps"]),
+                "trading_allowed": bool(r["trading_allowed"]),
+                "prev_position": float(r["prev_position"]),
+                "new_position": float(r["new_position"]),
+                "turnover": float(r["turnover"]),
+                "equity": float(r["equity"]),
+            }
+        )
+
+    data = {
+        "generated_at": pd.Timestamp.now("UTC").isoformat(),
+        "initial_cash": initial_cash,
+        "current_equity": current_equity,
+        "max_equity": max_equity,
+        "current_drawdown": current_drawdown,
+        "total_return": total_return,
+        "current_position": current_position,
+        "days_tracked": len(log),
+        "last_date": rows[-1]["date"] if rows else None,
+        "circuit_breaker": {
+            "halted": bool(breaker.get("halted", False)),
+            "halt_drawdown": breaker.get("halt_drawdown"),
+            "resume_drawdown": breaker.get("resume_drawdown"),
+        },
+        "rows": rows,
+        "backtest_context": BACKTEST_CONTEXT,
+    }
+    return data
+
+
+if __name__ == "__main__":
+    os.makedirs(OUT_DIR, exist_ok=True)
+    data = build_dashboard_data()
+    out_path = os.path.join(OUT_DIR, "data.json")
+    with open(out_path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"Ecrit {out_path} ({data['days_tracked']} jours, equity={data['current_equity']:.2f})")
