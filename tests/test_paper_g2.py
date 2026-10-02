@@ -86,3 +86,37 @@ def test_dashboard_renders_before_first_day(monkeypatch, tmp_path):
     from bot import dashboard_g2 as Dsh
     monkeypatch.setattr(Dsh, 'DIR', tmp_path)
     assert 'pas encore' in Dsh.build().read_text().lower()
+
+
+def test_first_run_creates_folder_and_sells_untracked_positions(market, monkeypatch, tmp_path):
+    folder = tmp_path / 'absent' / 'paper_g2'
+    monkeypatch.setattr(P, 'DIR', folder)
+    broker = FakeBroker()
+    broker.pos['BTCUSD'] = 0.5  # reste d'une execution interrompue
+    st, lines = P.run(broker, FakeGitHub(), now=market)
+    assert broker.orders[0] == ('BTC/USD', -0.5)
+    assert any('Initialisation' in l for l in lines)
+    total_virtual = sum(sl['qty']['BTCUSDT'] for sl in st['sleeves'].values())
+    assert total_virtual == pytest.approx(broker.pos['BTCUSD'])
+    assert (folder / 'state.json').exists() and (folder / 'ordres.csv').exists()
+
+
+def test_crash_after_an_order_does_not_double_buy_on_rerun(market):
+    broker = FakeBroker()
+    real_market = broker.market
+    calls = {'n': 0}
+
+    def flaky(pair, qty):
+        calls['n'] += 1
+        if calls['n'] == 2:
+            raise RuntimeError('panne reseau')
+        return real_market(pair, qty)
+    broker.market = flaky
+    with pytest.raises(RuntimeError):
+        P.run(broker, FakeGitHub(), now=market)
+    broker.market = real_market
+    P.run(broker, FakeGitHub(), now=market)  # relance le meme jour
+    st = P.load_state()
+    total_virtual = sum(sl['qty']['BTCUSDT'] for sl in st['sleeves'].values())
+    assert total_virtual == pytest.approx(broker.pos['BTCUSD'])
+    assert len(broker.orders) == 3  # 3 enveloppes, chacune achetee une seule fois
