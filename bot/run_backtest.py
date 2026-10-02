@@ -12,6 +12,7 @@ import pandas as pd
 
 from bot.backtest import GATE, gate, metrics, regimes, split, t_threshold
 from bot.data import fetch_1h
+from bot.multi import MULTI, SYMBOLS, equal_weight_hold
 from bot.strategies import FEE_BPS, SLIPPAGE_BPS, run_strategies
 
 REPORT = Path(__file__).parent / 'reports' / 'backtest.md'
@@ -28,9 +29,14 @@ def _regime_table(reg):
     return '\n'.join(rows)
 
 
-def build_report(df, oos_years=2):
+def build_report(df, oos_years=2, others=None):
     oos_start = df.index[-1] - pd.Timedelta(days=365 * oos_years)
     results = run_strategies(df)
+    if others:
+        dfs = {'BTCUSDT': df, **others}
+        for name, fn in MULTI.items():
+            results[name] = fn(dfs)[:2]
+        results['Reference - Buy & hold equipondere BTC/ETH/SOL'] = equal_weight_hold(dfs)[:2]
     n_tests = sum(not k.startswith('Reference') for k in results)
     head = '| Strategie | Rdt annuel | Sharpe | t-stat | Max DD | Taux reussite | Trades | Expo |\n|---|---|---|---|---|---|---|---|'
     lines = [
@@ -70,7 +76,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--years', type=int, default=4)
     args = p.parse_args()
-    report = build_report(fetch_1h(bars=24 * 365 * args.years))
+    bars = 24 * 365 * args.years
+    others = {s: fetch_1h(s, bars=bars) for s in SYMBOLS if s != 'BTCUSDT'}
+    report = build_report(fetch_1h(bars=bars), others=others)
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(report)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
