@@ -1,7 +1,7 @@
 # Backtest BTC/USD 1h
 
 Donnees Binance BTCUSDT du 2022-10-03 au 2026-10-02 10:00 UTC. Couts : 25 bps de frais + 5 bps de slippage par cote.
-Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > -15%, taux de reussite > 55%, t-stat > 2.67 (2.0 corrige de Bonferroni pour 6 strategies testees).
+Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > -15%, taux de reussite > 55%, t-stat > 2.77 (2.0 corrige de Bonferroni pour 8 strategies testees).
 
 ## Hors echantillon
 
@@ -14,6 +14,9 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 | E - Cassure Donchian 20/10 j | +12.0% | 0.57 | 0.81 | -37.1% | 45.5% | 11 | 49% |
 | F - RSI2 quotidien en tendance haussiere | +1.2% | 0.16 | 0.23 | -17.6% | 66.7% | 15 | 7% |
 | Reference - Buy & hold | +18.7% | 0.61 | 0.86 | -53.7% | nan% | 0 | 100% |
+| G - Rotation momentum BTC/ETH/SOL | +32.1% | 0.99 | 1.41 | -39.0% | 37.5% | 24 | 63% |
+| H - Trend diversifie BTC/ETH/SOL | +11.2% | 0.60 | 0.84 | -29.0% | 25.5% | 51 | 92% |
+| Reference - Buy & hold equipondere BTC/ETH/SOL | +8.5% | 0.43 | 0.61 | -65.4% | nan% | 0 | 100% |
 
 ## Verdict du gate
 
@@ -23,6 +26,8 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 - **D - Retour a la moyenne 1h en range** : ECHOUE (echoue sur : sharpe, max_drawdown, hit_rate, t_stat)
 - **E - Cassure Donchian 20/10 j** : ECHOUE (echoue sur : sharpe, max_drawdown, hit_rate, t_stat)
 - **F - RSI2 quotidien en tendance haussiere** : ECHOUE (echoue sur : sharpe, max_drawdown, t_stat)
+- **G - Rotation momentum BTC/ETH/SOL** : ECHOUE (echoue sur : sharpe, max_drawdown, hit_rate, t_stat)
+- **H - Trend diversifie BTC/ETH/SOL** : ECHOUE (echoue sur : sharpe, max_drawdown, hit_rate, t_stat)
 
 ## Periode de dev (info seulement, pas de gate)
 
@@ -35,6 +40,9 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 | E - Cassure Donchian 20/10 j | +22.3% | 0.85 | 1.20 | -23.1% | 38.5% | 13 | 46% |
 | F - RSI2 quotidien en tendance haussiere | +6.8% | 0.49 | 0.70 | -27.9% | 71.4% | 21 | 11% |
 | Reference - Buy & hold | +78.0% | 1.42 | 2.01 | -32.3% | 100.0% | 1 | 100% |
+| G - Rotation momentum BTC/ETH/SOL | +34.3% | 1.02 | 1.44 | -35.5% | 42.3% | 26 | 67% |
+| H - Trend diversifie BTC/ETH/SOL | +34.4% | 1.41 | 2.00 | -20.6% | 37.5% | 8 | 66% |
+| Reference - Buy & hold equipondere BTC/ETH/SOL | +83.6% | 1.28 | 1.82 | -48.6% | 100.0% | 3 | 100% |
 
 ## Hors echantillon par regime
 
@@ -114,4 +122,37 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 | haussier / vol haute | 93 | +321.1% | 3.41 |
 | range / vol basse | 207 | +15.1% | 0.54 |
 | range / vol haute | 32 | -55.9% | -1.71 |
+
+### G - Rotation momentum BTC/ETH/SOL
+
+| Regime | Jours | Rdt annualise | Sharpe |
+|---|---|---|---|
+| baissier / vol basse | 96 | -30.9% | -2.10 |
+| baissier / vol haute | 134 | -2.6% | -0.13 |
+| haussier / vol basse | 169 | +47.2% | 1.23 |
+| haussier / vol haute | 93 | +139.5% | 2.53 |
+| range / vol basse | 207 | +58.7% | 1.25 |
+| range / vol haute | 32 | +0.3% | 0.08 |
+
+### H - Trend diversifie BTC/ETH/SOL
+
+| Regime | Jours | Rdt annualise | Sharpe |
+|---|---|---|---|
+| baissier / vol basse | 96 | -3.4% | -0.62 |
+| baissier / vol haute | 134 | -9.4% | -1.62 |
+| haussier / vol basse | 169 | +3.2% | 0.25 |
+| haussier / vol haute | 93 | +111.7% | 2.98 |
+| range / vol basse | 207 | +17.3% | 0.73 |
+| range / vol haute | 32 | -35.1% | -2.88 |
+
+### Reference - Buy & hold equipondere BTC/ETH/SOL
+
+| Regime | Jours | Rdt annualise | Sharpe |
+|---|---|---|---|
+| baissier / vol basse | 96 | +4.0% | 0.30 |
+| baissier / vol haute | 134 | -31.2% | -0.16 |
+| haussier / vol basse | 169 | +6.2% | 0.37 |
+| haussier / vol haute | 93 | +518.3% | 3.49 |
+| range / vol basse | 207 | -3.5% | 0.26 |
+| range / vol haute | 32 | -87.4% | -2.93 |
 
