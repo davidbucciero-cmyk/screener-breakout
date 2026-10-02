@@ -13,11 +13,14 @@ from bot.multi import _closes, rotation_momentum
 LOOKBACKS = (14, 30, 60, 90)
 
 
+def btc_below_sma200_daily(btc_daily):
+    sma = btc_daily.rolling(200).mean()
+    return (btc_daily < sma).where(sma.notna(), False).astype(bool)
+
+
 def btc_below_sma200(dfs):
     _, daily = _closes(dfs)
-    btc = daily['BTCUSDT']
-    sma = btc.rolling(200).mean()
-    return (btc < sma).where(sma.notna(), False).astype(bool)
+    return btc_below_sma200_daily(daily['BTCUSDT'])
 
 
 VARIANTS = {

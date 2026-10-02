@@ -44,13 +44,14 @@ def _apply(hourly, w_daily):
     return r, trades.sort_values('entry_time').reset_index(drop=True), w
 
 
-def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None, target_vol=TARGET_VOL):
-    """Chaque dimanche : les top_k cryptos au meilleur rendement `lookback` j, si ce rendement est > 0.
+def rotation_weights(daily, lookback=30, top_k=1, risk_off=None, lookbacks=None, target_vol=TARGET_VOL):
+    """Poids par jour, decides a la cloture du jour (index = jour), appliques au jour suivant.
 
-    Chaque ligne pese 1/top_k, reduite pour viser 40 % de vol. risk_off (booleen quotidien, connu a
+    Fonction de decision unique, partagee par le backtest et le bot paper/live.
+    Chaque dimanche : les top_k cryptos au meilleur rendement `lookback` j, si ce rendement est > 0.
+    Chaque ligne pese 1/top_k, reduite pour viser `target_vol`. risk_off (booleen quotidien, connu a
     la cloture du jour) force le cash le lendemain, meme en cours de semaine.
     """
-    hourly, daily = _closes(dfs)
     if lookbacks:  # moyenne des rendements sur plusieurs horizons (tous requis)
         mom = sum(daily / daily.shift(k) - 1 for k in lookbacks) / len(lookbacks)
     else:
@@ -63,6 +64,12 @@ def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None, 
     w = w[w.index.dayofweek == 6].reindex(w.index).ffill().fillna(0.0)
     if risk_off is not None:
         w = w.mul(1 - risk_off.reindex(w.index).fillna(False).astype(float), axis=0)
+    return w
+
+
+def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None, target_vol=TARGET_VOL):
+    hourly, daily = _closes(dfs)
+    w = rotation_weights(daily, lookback, top_k, risk_off, lookbacks, target_vol)
     return _apply(hourly, w)
 
 
