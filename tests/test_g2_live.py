@@ -38,17 +38,16 @@ def test_kill_switch_flattens_and_halts():
     st = _state()
     prices = {s: 100.0 for s in L.SYMBOLS}
     sl = st['sleeves']['G2-19']
-    sl['cash'], sl['qty']['BTCUSDT'], sl['peak'] = 0.0, 100.0, 10_000.0  # 10 000 $ investis
-    crash = dict(prices, BTCUSDT=75.0)                                    # -25 % > kill 20 %
-    orders, deltas, events = L.plan_orders(st, _daily(), crash)
-    assert st['sleeves']['G2-19']['halted']
-    assert deltas['G2-19']['BTCUSDT'] == pytest.approx(-100.0)
+    sl['cash'], sl['qty']['BTCUSDT'], sl['peak'] = 0.0, 50.0, 5_000.0   # 5 000 $ investis
+    crash = dict(prices, BTCUSDT=75.0)                                  # -25 % > kill 20 %
+    orders, events = L.plan_orders(st, _daily(), crash)
+    assert sl['halted']
+    assert ('G2-19', 'BTCUSDT', pytest.approx(-50.0)) in [(n, s, q) for n, s, q in orders]
     assert any('KILL SWITCH' in e[1] for e in events)
-    # Le lendemain, meme si le marche remonte, l'enveloppe reste a l'arret.
-    _, deltas2, _ = L.plan_orders(st, _daily(), prices)
-    L.apply_fill(st, deltas, 'BTCUSDT', 75.0)
-    _, deltas2, _ = L.plan_orders(st, _daily(), prices)
-    assert all(v == 0 for v in deltas2['G2-19'].values())
+    L.apply_fill(sl, 'BTCUSDT', -50.0, 75.0)
+    # Le lendemain, meme si le marche remonte, l'enveloppe reste a l'arret et ne rachete rien.
+    orders2, _ = L.plan_orders(st, _daily(), prices)
+    assert not [o for o in orders2 if o[0] == 'G2-19']
 
 
 def test_daily_loss_blocks_buys_but_allows_sells():
@@ -66,20 +65,27 @@ def test_no_leverage():
     sl = L.new_sleeve()
     prices = {s: 100.0 for s in L.SYMBOLS}
     out = L.RiskBook.clip_targets({'BTCUSDT': 300.0, 'ETHUSDT': 0.0, 'SOLUSDT': 0.0}, sl, prices, no_buy=False)
-    assert out['BTCUSDT'] * 100 == pytest.approx(10_000.0)
+    assert out['BTCUSDT'] * 100 == pytest.approx(L.ENVELOPE)
 
 
 def test_fill_accounting_with_fees():
+    buyer, seller = L.new_sleeve(), L.new_sleeve()
+    seller['qty']['BTCUSDT'] = 2.0
+    L.apply_fill(buyer, 'BTCUSDT', 10.0, 100.0)
+    L.apply_fill(seller, 'BTCUSDT', -2.0, 100.0)
+    assert buyer['cash'] == pytest.approx(L.ENVELOPE - 1000)
+    assert buyer['qty']['BTCUSDT'] == pytest.approx(10 * (1 - L.FEE))   # frais en crypto a l'achat
+    assert seller['cash'] == pytest.approx(L.ENVELOPE + 200 * (1 - L.FEE))  # frais en dollars a la vente
+    assert seller['qty']['BTCUSDT'] == pytest.approx(0.0)
+
+
+def test_each_envelope_orders_separately_and_stays_under_approval_threshold():
     st = _state()
-    deltas = {'G2-19': {'BTCUSDT': 10.0, 'ETHUSDT': 0, 'SOLUSDT': 0},
-              'G2-25': {'BTCUSDT': -2.0, 'ETHUSDT': 0, 'SOLUSDT': 0},
-              'G2-40': {'BTCUSDT': 0.0, 'ETHUSDT': 0, 'SOLUSDT': 0}}
-    st['sleeves']['G2-25']['qty']['BTCUSDT'] = 2.0
-    L.apply_fill(st, deltas, 'BTCUSDT', 100.0)
-    assert st['sleeves']['G2-19']['cash'] == pytest.approx(10_000 - 1000)
-    assert st['sleeves']['G2-19']['qty']['BTCUSDT'] == pytest.approx(10 * (1 - L.FEE))  # frais en crypto a l'achat
-    assert st['sleeves']['G2-25']['cash'] == pytest.approx(10_000 + 200 * (1 - L.FEE))  # frais en dollars a la vente
-    assert st['sleeves']['G2-25']['qty']['BTCUSDT'] == pytest.approx(0.0)
+    d = _daily()
+    prices = d.iloc[-1].to_dict()
+    orders, _ = L.plan_orders(st, d, prices)
+    assert {o[0] for o in orders} <= set(L.SLEEVES)
+    assert all(not L.needs_approval(q, prices[s]) for _, s, q in orders)  # 5 000 $ max sans levier
 
 
 def test_approval_threshold():

@@ -24,11 +24,11 @@ class FakeGitHub:
     def __init__(self, approve=False):
         self.asked, self.approve = [], approve
 
-    def approved(self, symbol):
+    def approved(self, sleeve, symbol):
         return 1 if self.approve else None
 
-    def ask(self, symbol, qty, price):
-        self.asked.append(symbol)
+    def ask(self, sleeve, symbol, qty, price):
+        self.asked.append((sleeve, symbol))
 
     def close(self, n):
         pass
@@ -44,10 +44,11 @@ def market(monkeypatch, tmp_path):
     return idx[-1] + pd.Timedelta(days=1, minutes=10)
 
 
-def test_first_day_buys_after_approval_and_is_idempotent(market):
-    broker, gh = FakeBroker(), FakeGitHub(approve=True)  # 3 enveloppes : le 1er achat depasse 5 000 $
+def test_first_day_buys_without_approval_and_is_idempotent(market):
+    broker, gh = FakeBroker(), FakeGitHub(approve=False)
     st, lines = P.run(broker, gh, now=market)
-    assert broker.orders and broker.orders[0][0] == 'BTC/USD' and broker.orders[0][1] > 0
+    assert len(broker.orders) == 3 and all(o[0] == 'BTC/USD' and o[1] > 0 for o in broker.orders)  # un ordre par enveloppe
+    assert not gh.asked
     total_virtual = sum(sl['qty']['BTCUSDT'] for sl in st['sleeves'].values())
     assert total_virtual == pytest.approx(broker.pos['BTCUSD'])  # comptes virtuels = position reelle
     n = len(broker.orders)
@@ -59,7 +60,7 @@ def test_large_order_waits_for_approval(market, monkeypatch):
     monkeypatch.setattr(L, 'APPROVAL_USD', 100.0)
     broker, gh = FakeBroker(), FakeGitHub(approve=False)
     st, lines = P.run(broker, gh, now=market)
-    assert not broker.orders and gh.asked == ['BTCUSDT']
+    assert not broker.orders and len(gh.asked) == 3 and all(a[1] == 'BTCUSDT' for a in gh.asked)
     assert any('attente de validation' in l for l in lines)
 
 

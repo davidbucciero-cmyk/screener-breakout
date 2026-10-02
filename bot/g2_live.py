@@ -16,7 +16,7 @@ from bot.multi import rotation_weights
 log = logging.getLogger(__name__)
 
 SYMBOLS = {'BTCUSDT': 'BTC/USD', 'ETHUSDT': 'ETH/USD', 'SOLUSDT': 'SOL/USD'}
-ENVELOPE = 10_000.0
+ENVELOPE = 5_000.0          # par enveloppe ; chaque enveloppe passe ses propres ordres
 SLEEVES = {'G2-19': {'target_vol': 0.19, 'kill_dd': 0.20},
            'G2-25': {'target_vol': 0.25, 'kill_dd': 0.20},
            'G2-40': {'target_vol': 0.40, 'kill_dd': 0.35}}
@@ -88,8 +88,8 @@ class RiskBook:
 
 
 def plan_orders(state, daily, prices):
-    """Cibles par enveloppe -> ordres nets par crypto. Renvoie (ordres, deltas par enveloppe, evenements)."""
-    deltas, events = {}, []
+    """Ordres par enveloppe (pas de compensation entre enveloppes). Renvoie ([(enveloppe, crypto, qte)], evenements)."""
+    orders, events = [], []
     for name, cfg in SLEEVES.items():
         sl = state['sleeves'][name]
         kill, no_buy, why = RiskBook(name, cfg).assess(sl, prices)
@@ -102,28 +102,24 @@ def plan_orders(state, daily, prices):
             w = decide(daily, cfg['target_vol'])
             eq = equity(sl, prices)
             target = RiskBook.clip_targets({s: w.get(s, 0.0) * eq / prices[s] for s in SYMBOLS}, sl, prices, no_buy)
-        deltas[name] = {s: target[s] - sl['qty'][s] for s in SYMBOLS}
-    net = {s: sum(d[s] for d in deltas.values()) for s in SYMBOLS}
-    orders = {s: q for s, q in net.items() if abs(q) * prices[s] >= MIN_ORDER_USD}
-    return orders, deltas, events
+        for s in SYMBOLS:
+            q = target[s] - sl['qty'][s]
+            if abs(q) * prices[s] >= MIN_ORDER_USD or (q < 0 and target[s] == 0 and sl['qty'][s] > 0):
+                orders.append((name, s, q))
+    return orders, events
 
 
-def apply_fill(state, deltas, symbol, fill_price, executed_fraction=1.0):
-    """Repartit une execution entre enveloppes, au prix d'execution.
+def apply_fill(sleeve, symbol, qty, fill_price):
+    """Execution d'une enveloppe, au prix d'execution.
 
     Frais comme chez Alpaca crypto : preleves sur l'actif recu (crypto a l'achat, dollars a la vente).
     """
-    for name, d in deltas.items():
-        q = d[symbol] * executed_fraction
-        if abs(q) * fill_price < 1e-9:
-            continue
-        sl = state['sleeves'][name]
-        if q > 0:
-            sl['qty'][symbol] += q * (1 - FEE)
-            sl['cash'] -= q * fill_price
-        else:
-            sl['qty'][symbol] += q
-            sl['cash'] += -q * fill_price * (1 - FEE)
+    if qty > 0:
+        sleeve['qty'][symbol] += qty * (1 - FEE)
+        sleeve['cash'] -= qty * fill_price
+    else:
+        sleeve['qty'][symbol] += qty
+        sleeve['cash'] += -qty * fill_price * (1 - FEE)
 
 
 class AlpacaPaper:
