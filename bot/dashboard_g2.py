@@ -1,0 +1,202 @@
+"""Tableau de bord du paper trading G2 : un fichier HTML autonome (aucune ressource externe).
+
+Genere apres chaque journee dans paper_g2/dashboard.html (commite) et joint aux emails.
+Contenu : valeur et drawdown de chaque enveloppe, comparaison au backtest sur les memes jours,
+position dans les bandes de normalite, positions actuelles, ordres et journal.
+"""
+import json
+import logging
+from pathlib import Path
+
+import pandas as pd
+
+from bot import g2_live as L
+
+log = logging.getLogger(__name__)
+ROOT = Path(__file__).parent.parent
+DIR = ROOT / 'paper_g2'
+BANDS = ROOT / 'bot' / 'reports' / 'g2_bandes.json'
+WINDOW_FOR_DAYS = [(45, '1 mois'), (135, '3 mois'), (10_000, '6 mois')]
+
+
+def _read_csv(name):
+    p = DIR / name
+    return pd.read_csv(p) if p.exists() and p.stat().st_size else pd.DataFrame()
+
+
+def backtest_equity(daily, start, sleeves=L.SLEEVES):
+    """Valeur qu'aurait eue chaque enveloppe selon le backtest, sur les memes jours que le paper."""
+    from bot.run_g2_check import daily_returns
+    out = {}
+    for name, cfg in sleeves.items():
+        r = daily_returns(daily, cfg['target_vol'])
+        # Le journal est date du jour de decision (lendemain de la cloture) : meme convention ici.
+        r.index = (r.index + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        r = r[r.index > start]
+        out[name] = (L.ENVELOPE * (1 + r).cumprod()).round(2).to_dict()
+    return out
+
+
+def band_status(perf, days, bands, name):
+    if not bands or name not in bands:
+        return None
+    label = next(l for d, l in WINDOW_FOR_DAYS if days <= d)
+    b = bands[name][label]['rendement']
+    where = 'sous la fourchette normale' if perf < b['p5'] else (
+        'au-dessus de la fourchette normale' if perf > b['p95'] else 'dans la fourchette normale')
+    return {'fenetre': label, 'p5': b['p5'], 'p50': b['p50'], 'p95': b['p95'], 'verdict': where}
+
+
+def payload(daily=None):
+    state = json.loads((DIR / 'state.json').read_text()) if (DIR / 'state.json').exists() else None
+    journal, orders = _read_csv('journal.csv'), _read_csv('ordres.csv')
+    bands = json.loads(BANDS.read_text()) if BANDS.exists() else None
+    data = {'genere': pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M UTC'), 'enveloppes': [], 'series': {},
+            'backtest': {}, 'ordres': orders.tail(30).iloc[::-1].to_dict('records') if len(orders) else [],
+            'debut': state['start'] if state else None, 'derniere': state['last_date'] if state else None}
+    if journal.empty or state is None:
+        return data
+    for name, cfg in L.SLEEVES.items():
+        j = journal[journal['enveloppe'] == name].drop_duplicates('date', keep='last')
+        data['series'][name] = {'dates': j['date'].tolist(), 'valeur': j['valeur'].tolist(),
+                                'drawdown': j['drawdown'].tolist()}
+        last = j.iloc[-1]
+        perf = last['valeur'] / L.ENVELOPE - 1
+        days = (pd.Timestamp(last['date']) - pd.Timestamp(state['start'])).days + 1
+        weights = {s: float(last.get(f'poids_{s}', 0)) for s in L.SYMBOLS}
+        held = max(weights, key=weights.get) if max(weights.values()) > 0 else None
+        data['enveloppes'].append({
+            'nom': name, 'vol': cfg['target_vol'], 'kill': cfg['kill_dd'], 'valeur': float(last['valeur']),
+            'perf': perf, 'drawdown': float(last['drawdown']), 'arretee': bool(last['arretee']),
+            'position': f"{held.replace('USDT', '')} {weights[held]:.0%}" if held else 'cash', 'jours': days,
+            'bande': band_status(perf, days, bands, name)})
+    if daily is not None:
+        data['backtest'] = backtest_equity(daily, state['start'])
+    return data
+
+
+TEMPLATE = r"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Suivi G2</title>
+<style>
+:root{color-scheme:light;--bg:#fcfcfb;--card:#ffffff;--line:#e4e3df;--grid:#efeeea;--t1:#0b0b0b;--t2:#52514e;--t3:#7a7975;
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--good:#008300;--bad:#e34948;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#1a1a19;--card:#232321;--line:#3a3a37;
+--grid:#2c2c2a;--t1:#ffffff;--t2:#c3c2b7;--t3:#9b9a91;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--good:#3fae3f;--bad:#e66767;}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#1a1a19;--card:#232321;--line:#3a3a37;--grid:#2c2c2a;--t1:#ffffff;--t2:#c3c2b7;
+--t3:#9b9a91;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--good:#3fae3f;--bad:#e66767;}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t1);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 48px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 10px}
+.sub{color:var(--t2);margin:0 0 18px}.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.tile h3{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:8px}.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+.big{font-size:26px;font-weight:650;letter-spacing:-.01em}.row{display:flex;justify-content:space-between;color:var(--t2);font-size:13px;margin-top:4px}
+.row b{color:var(--t1);font-weight:600}.pill{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--t2)}
+.alert{color:var(--bad);font-weight:600}.ok{color:var(--good)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 12px 6px;position:relative}
+svg{display:block;width:100%;height:auto;overflow:visible}.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--t2);font-size:13px;margin:4px 4px 8px}
+.tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+font-size:12px;color:var(--t1);box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--t2);font-weight:600}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.wrap{overflow-x:auto}
+.empty{color:var(--t2);padding:24px;text-align:center}details summary{cursor:pointer;color:var(--t2);margin-top:8px}
+</style></head><body><main>
+<h1>Suivi du paper trading G2</h1>
+<p class="sub" id="sub"></p>
+<div class="tiles" id="tiles"></div>
+<h2>Valeur des enveloppes</h2><div class="card"><div class="legend" id="lg1"></div><div id="c1"></div><div class="tip" id="t1"></div></div>
+<h2>Drawdown (perte depuis le plus haut)</h2><div class="card"><div class="legend" id="lg2"></div><div id="c2"></div><div class="tip" id="t2"></div></div>
+<h2>Paper vs backtest sur les memes jours</h2><div class="wrap"><table id="cmp"></table></div>
+<p class="sub" style="margin-top:6px">Un ecart de plus de 1 a 2 points signale un probleme d'execution, pas un mauvais marche.</p>
+<h2>Derniers ordres</h2><div class="wrap"><table id="ord"></table></div>
+<details><summary>Donnees des graphiques (tableau)</summary><div class="wrap"><table id="raw"></table></div></details>
+</main>
+<script>
+const D = __DATA__;
+const NAMES = ['G2-19','G2-25','G2-40'], COL = {'G2-19':'var(--s1)','G2-25':'var(--s2)','G2-40':'var(--s3)'};
+const pct = (v,d=1) => (v>0?'+':'')+(v*100).toFixed(d)+' %', usd = v => v.toLocaleString('fr-FR',{maximumFractionDigits:0})+' $';
+const el = (id) => document.getElementById(id);
+el('sub').textContent = D.debut ? `Depuis le ${D.debut} · derniere journee ${D.derniere} · genere ${D.genere} · 3 enveloppes de 5 000 $` :
+  `Pas encore de journee de trading · genere ${D.genere}`;
+const tiles = el('tiles');
+if (!D.enveloppes.length) tiles.innerHTML = '<div class="tile empty">Le bot n\'a pas encore tourne. Les donnees apparaitront apres la premiere journee (00:10 UTC).</div>';
+for (const e of D.enveloppes) {
+  const dist = e.drawdown + e.kill, b = e.bande;
+  tiles.insertAdjacentHTML('beforeend', `<div class="tile"><h3><span class="sw" style="background:${COL[e.nom]}"></span>${e.nom}
+   <span class="pill">vol ${Math.round(e.vol*100)} %</span>${e.arretee?'<span class="pill alert">ARRETEE</span>':''}</h3>
+   <div class="big">${usd(e.valeur)}</div>
+   <div class="row"><span>Depuis le debut</span><b>${pct(e.perf)}</b></div>
+   <div class="row"><span>Drawdown / kill switch</span><b class="${dist<0.05?'alert':''}">${pct(e.drawdown)} / -${Math.round(e.kill*100)} %</b></div>
+   <div class="row"><span>Position</span><b>${e.position}</b></div>
+   ${b?`<div class="row"><span>Normale a ${b.fenetre}</span><b>${pct(b.p5,0)} a ${pct(b.p95,0)}</b></div>
+   <div class="row"><span>Verdict (${e.jours} j)</span><b class="${b.verdict.startsWith('dans')?'ok':'alert'}">${b.verdict}</b></div>`:''}</div>`);
+}
+function chart(target, tip, legend, key, fmt, refs, maxV) {
+  const host = el(target), series = NAMES.filter(n => D.series[n]).map(n => ({n, d:D.series[n].dates, v:D.series[n][key]}));
+  if (!series.length || !series[0].d.length) { host.innerHTML = '<div class="empty">Pas encore de donnees.</div>'; return; }
+  el(legend).innerHTML = series.map(s => `<span><span class="sw" style="background:${COL[s.n]}"></span> ${s.n}</span>`).join('');
+  const W=1000,H=300,m={l:64,r:70,t:10,b:28}, dates=series[0].d, all=series.flatMap(s=>s.v).concat(refs.map(r=>r.v));
+  let lo=Math.min(...all), hi=Math.max(...all); if (lo===hi){lo-=1;hi+=1;} const pad=(hi-lo)*.08; lo-=pad; hi+=pad;
+  if (maxV!==undefined) hi=Math.min(hi,maxV);
+  const x=i=>m.l+(dates.length<2?0.5:i/(dates.length-1))*(W-m.l-m.r), y=v=>m.t+(1-(v-lo)/(hi-lo))*(H-m.t-m.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${key}">`;
+  for (let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4;s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/>
+    <text x="${m.l-8}" y="${y(v)+4}" text-anchor="end" fill="var(--t3)" font-size="12">${fmt(v)}</text>`;}
+  const step=Math.max(1,Math.ceil(dates.length/6)); dates.forEach((d,i)=>{if(i%step===0)s+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle" fill="var(--t3)" font-size="12">${d.slice(5)}</text>`;});
+  for (const r of refs) s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y(r.v)}" y2="${y(r.v)}" stroke="var(--t3)" stroke-dasharray="4 4"/>
+    <text x="${W-m.r+4}" y="${y(r.v)+4}" fill="var(--t2)" font-size="11">${r.label}</text>`;
+  const ends=[];
+  for (const se of series){const pts=se.v.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+    s+=`<polyline points="${pts}" fill="none" stroke="${COL[se.n]}" stroke-width="2" stroke-linejoin="round"/>`;
+    const li=se.v.length-1; s+=`<circle cx="${x(li)}" cy="${y(se.v[li])}" r="4" fill="${COL[se.n]}" stroke="var(--card)" stroke-width="2"/>`;
+    ends.push({n:se.n,x:x(li),y:y(se.v[li])});}
+  ends.sort((a,b)=>a.y-b.y); for (let k=1;k<ends.length;k++) ends[k].y=Math.max(ends[k].y,ends[k-1].y+15);  // pas de chevauchement
+  for (const e of ends) s+=`<text x="${e.x+8}" y="${e.y+4}" fill="var(--t1)" font-size="12">${e.n}</text>`;
+  s+=`<line id="${target}x" y1="${m.t}" y2="${H-m.b}" stroke="var(--t3)" visibility="hidden"/><rect x="${m.l}" y="${m.t}" width="${W-m.l-m.r}" height="${H-m.t-m.b}" fill="transparent"/></svg>`;
+  host.innerHTML=s; const svg=host.querySelector('svg'), cross=el(target+'x'), t=el(tip);
+  svg.addEventListener('mousemove',ev=>{const b=svg.getBoundingClientRect(),px=(ev.clientX-b.left)*W/b.width;
+    const i=Math.max(0,Math.min(dates.length-1,Math.round((px-m.l)/(W-m.l-m.r)*(dates.length-1))));
+    cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
+    t.innerHTML=`<b>${dates[i]}</b><br>`+series.map(se=>`<span class="sw" style="background:${COL[se.n]}"></span> ${se.n} : ${fmt(se.v[i])}`).join('<br>');
+    t.style.display='block';const cx=ev.clientX-host.parentElement.getBoundingClientRect().left;t.style.left=Math.min(cx+12,host.clientWidth-170)+'px';t.style.top='40px';});
+  svg.addEventListener('mouseleave',()=>{t.style.display='none';cross.setAttribute('visibility','hidden');});
+}
+chart('c1','t1','lg1','valeur',v=>usd(v),[{v:5000,label:'depart'}]);
+chart('c2','t2','lg2','drawdown',v=>pct(v,0),[{v:-0.20,label:'kill 19/25'},{v:-0.35,label:'kill 40'}],0.005);
+const cmp=el('cmp');
+if (D.enveloppes.length) {
+  cmp.innerHTML='<tr><th>Enveloppe</th><th class="n">Paper</th><th class="n">Backtest memes jours</th><th class="n">Ecart</th><th>Lecture</th></tr>'+
+  D.enveloppes.map(e=>{const bt=D.backtest[e.nom]||{}, k=Object.keys(bt), btv=k.length?bt[k[k.length-1]]:null;
+    if(btv===null) return `<tr><td>${e.nom}</td><td class="n">${pct(e.perf)}</td><td class="n">-</td><td class="n">-</td><td>backtest indisponible</td></tr>`;
+    const bp=btv/5000-1, gap=e.perf-bp; return `<tr><td>${e.nom}</td><td class="n">${pct(e.perf)}</td><td class="n">${pct(bp)}</td><td class="n">${pct(gap)}</td>
+    <td class="${Math.abs(gap)>0.02?'alert':'ok'}">${Math.abs(gap)>0.02?'ecart a examiner':'conforme'}</td></tr>`;}).join('');
+} else cmp.innerHTML='<tr><td class="empty">Pas encore de donnees.</td></tr>';
+const ord=el('ord');
+ord.innerHTML = D.ordres.length ? '<tr><th>Date</th><th>Enveloppe</th><th>Crypto</th><th class="n">Quantite</th><th class="n">Prix</th></tr>'+
+  D.ordres.map(o=>`<tr><td>${o.date}</td><td>${o.enveloppe||''}</td><td>${String(o.symbole).replace('USDT','')}</td><td class="n">${(+o.quantite).toFixed(6)}</td><td class="n">${(+o.prix).toLocaleString('fr-FR')} $</td></tr>`).join('')
+  : '<tr><td class="empty">Aucun ordre pour l\'instant.</td></tr>';
+const raw=el('raw'), rows=[];
+for (const n of NAMES) if (D.series[n]) D.series[n].dates.forEach((d,i)=>rows.push(`<tr><td>${d}</td><td>${n}</td><td class="n">${usd(D.series[n].valeur[i])}</td><td class="n">${pct(D.series[n].drawdown[i])}</td></tr>`));
+raw.innerHTML='<tr><th>Date</th><th>Enveloppe</th><th class="n">Valeur</th><th class="n">Drawdown</th></tr>'+rows.join('');
+</script></body></html>"""
+
+
+def render(data):
+    return TEMPLATE.replace('__DATA__', json.dumps(data, ensure_ascii=False, default=str))
+
+
+def build(daily=None):
+    """Ecrit dashboard.html (piece jointe des emails) et dashboard.json (lu par l'artefact de suivi)."""
+    DIR.mkdir(exist_ok=True)
+    data = payload(daily)
+    (DIR / 'dashboard.json').write_text(json.dumps(data, ensure_ascii=False, default=str), encoding='utf-8')
+    path = DIR / 'dashboard.html'
+    path.write_text(render(data), encoding='utf-8')
+    return path
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    from btc_forecast.data import fetch_btc
+    daily = pd.DataFrame({s: fetch_btc('1d', bars=800, symbol=s)['close'] for s in L.SYMBOLS})
+    print(build(daily))
