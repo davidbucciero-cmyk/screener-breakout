@@ -232,7 +232,8 @@ def build_report(res, examples=()):
               f"- Positions sans prix le mois suivant (comptees a 0 %) : {int(res['sans_prix'].sum())}",
               '', '## Limites', '',
               "- Biais du survivant : les entreprises radiees n'ont plus de ticker SEC ni de prix Yahoo. "
-              "Toutes les strategies et l'Univers sont flattes ; S2 (qui vend les pires) l'est le plus.",
+              "Les achats (S1, S4, Univers) sont flattes. S2 est au contraire penalisee : les faillites, "
+              "qu'elle aurait vendues a decouvert avec profit, manquent a sa jambe vendeuse.",
               '- Le cash de l\'overlay de vol est compte a 0 % (pas de taux monetaire) : prudent.',
               "- 2019-2026 a deja servi a BOT 2 pour un autre modele : ce n'est pas un hors-echantillon vierge.", '']
     return '\n'.join(lines)
