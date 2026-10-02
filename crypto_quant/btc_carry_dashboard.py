@@ -68,8 +68,17 @@ def build_dashboard_data() -> dict:
     current_drawdown = float(drawdown.iloc[-1]) if not drawdown.empty else 0.0
     total_return = current_equity / initial_cash - 1.0
 
+    # Buy & hold BTC (meme capital initial, meme date de depart) : reference
+    # passive au prix spot Kraken (la meme serie que celle utilisee pour le
+    # signal partout ailleurs sur ce dashboard) - achete une fois au premier
+    # jour suivi, jamais retouche.
+    first_spot = float(log["spot_close"].iloc[0]) if not log.empty else None
+    buy_hold_series = (log["spot_close"] / first_spot * initial_cash) if first_spot else pd.Series(dtype=float)
+    current_buy_hold = float(buy_hold_series.iloc[-1]) if len(buy_hold_series) else initial_cash
+    buy_hold_return = current_buy_hold / initial_cash - 1.0
+
     rows = []
-    for _, r in log.iterrows():
+    for idx, r in log.iterrows():
         rows.append(
             {
                 "date": r["date"].strftime("%Y-%m-%d"),
@@ -82,6 +91,7 @@ def build_dashboard_data() -> dict:
                 "new_position": float(r["new_position"]),
                 "turnover": float(r["turnover"]),
                 "equity": float(r["equity"]),
+                "buy_hold_equity": float(buy_hold_series.loc[idx]),
             }
         )
 
@@ -100,6 +110,8 @@ def build_dashboard_data() -> dict:
             "halt_drawdown": breaker.get("halt_drawdown"),
             "resume_drawdown": breaker.get("resume_drawdown"),
         },
+        "current_buy_hold": current_buy_hold,
+        "buy_hold_return": buy_hold_return,
         "rows": rows,
         "backtest_context": BACKTEST_CONTEXT,
     }

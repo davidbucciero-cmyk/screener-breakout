@@ -19,6 +19,7 @@
     --baseline: #c3c2b7;
     --accent: #2a78d6;
     --accent-wash: rgba(42,120,214,0.10);
+    --series-2: #eb6834;
     --good: #0ca30c;
     --critical: #d03b3b;
     --warning: #fab219;
@@ -39,6 +40,7 @@
       --baseline: #383835;
       --accent: #3987e5;
       --accent-wash: rgba(57,135,229,0.14);
+      --series-2: #d95926;
       --div-pos: #3987e5;
       --div-neg: #e66767;
       --div-mid: #383835;
@@ -56,6 +58,7 @@
     --baseline: #383835;
     --accent: #3987e5;
     --accent-wash: rgba(57,135,229,0.14);
+    --series-2: #d95926;
     --div-pos: #3987e5;
     --div-neg: #e66767;
     --div-mid: #383835;
@@ -90,7 +93,7 @@
 
   .stats {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 1px;
     background: var(--border);
     border: 1px solid var(--border);
@@ -98,7 +101,6 @@
     overflow: hidden;
     margin-bottom: 28px;
   }
-  @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
   .tile { background: var(--surface); padding: 16px; min-width: 0; }
   .tile .label { font-size: 12px; color: var(--ink-muted); margin: 0 0 8px; }
   .tile .value { font-size: 22px; font-weight: 600; margin: 0; line-height: 1.1; }
@@ -134,6 +136,9 @@
   }
   .card h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
   .card .card-sub { font-size: 12.5px; color: var(--ink-muted); margin: 0 0 12px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+  .legend-item .key { width: 14px; height: 2px; border-radius: 1px; flex-shrink: 0; }
   .chart-wrap { position: relative; }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
   .axis-label { font-size: 10.5px; fill: var(--ink-muted); font-family: "IBM Plex Mono", monospace; }
@@ -188,9 +193,10 @@
 <section class="stats" id="stats"></section>
 
 <div class="card">
-  <h2>Equity</h2>
-  <p class="card-sub">Capital paper (depart $10 000), une bougie par jour</p>
+  <h2>Equity vs buy &amp; hold</h2>
+  <p class="card-sub">Capital paper (depart $10 000) contre un achat unique de BTC au meme depart, jamais retouche</p>
   <p class="sparse-note" id="equity-sparse" hidden></p>
+  <div class="legend" id="equity-legend"></div>
   <div class="chart-wrap"><svg class="chart" id="equity-chart" viewBox="0 0 860 220"></svg></div>
 </div>
 
@@ -258,6 +264,19 @@
         delta: fmtPct(data.total_return) + " vs capital initial",
         deltaCls: data.total_return > 0.0001 ? "up" : data.total_return < -0.0001 ? "down" : "flat",
       },
+      {
+        label: "Buy & hold BTC",
+        value: fmtUSD(data.current_buy_hold),
+        delta: fmtPct(data.buy_hold_return) + " vs capital initial",
+        deltaCls: data.buy_hold_return > 0.0001 ? "up" : data.buy_hold_return < -0.0001 ? "down" : "flat",
+      },
+      {
+        label: "Strategie vs buy & hold",
+        value: fmtPct(data.total_return - data.buy_hold_return),
+        valueMono: true,
+        delta: data.total_return - data.buy_hold_return > 0.0001 ? "surperforme" : data.total_return - data.buy_hold_return < -0.0001 ? "sous-performe" : "a egalite",
+        deltaCls: data.total_return - data.buy_hold_return > 0.0001 ? "up" : data.total_return - data.buy_hold_return < -0.0001 ? "down" : "flat",
+      },
       { label: "Position", valueHtml: '<span class="pill ' + pos.cls + '">' + pos.text + "</span>" },
       {
         label: "Basis aujourd'hui",
@@ -307,13 +326,20 @@
   }
 
   function renderLineChart(opts) {
-    // opts: svgId, rows, xKey, yKey, color, zeroLine (bool), fmtY, fmtTooltip
+    // opts: svgId, rows, xKey, fmtY, tooltipLabel, and EITHER
+    //  - yKey + color (+ diverging/zeroLine) for a single series, or
+    //  - series: [{yKey, color, label}, ...] for two or more series
+    //    (legendId renders a line-key legend - required for >=2 series).
     var svg = document.getElementById(opts.svgId);
     var rows = opts.rows;
     if (!rows.length) { svg.innerHTML = ""; return; }
 
-    var values = rows.map(function (r) { return r[opts.yKey]; });
-    var yMin = Math.min.apply(null, values), yMax = Math.max.apply(null, values);
+    var series = opts.series || [{ yKey: opts.yKey, color: opts.color, label: opts.tooltipLabel }];
+    var multi = series.length > 1;
+
+    var allValues = [];
+    series.forEach(function (s) { rows.forEach(function (r) { allValues.push(r[s.yKey]); }); });
+    var yMin = Math.min.apply(null, allValues), yMax = Math.max.apply(null, allValues);
     if (opts.zeroLine) { yMin = Math.min(yMin, 0); yMax = Math.max(yMax, 0); }
     var pad = (yMax - yMin) * 0.12 || Math.abs(yMax || 1) * 0.1 || 1;
     var nt = niceTicks(yMin - pad, yMax + pad, 4);
@@ -322,7 +348,6 @@
     function xPos(i) { return n === 1 ? (PAD_L + (W - PAD_L - PAD_R) / 2) : PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R); }
     function yPos(v) { return PAD_T + (1 - (v - nt.min) / (nt.max - nt.min)) * (H - PAD_T - PAD_B); }
 
-    var svgns = "http://www.w3.org/2000/svg";
     var parts = [];
 
     nt.ticks.forEach(function (t) {
@@ -342,12 +367,13 @@
 
     if (opts.diverging) {
       // two polylines, split at sign changes, colored by sign, with a soft area fill
+      var yKey = series[0].yKey;
       var segs = [];
       var cur = null;
       rows.forEach(function (r, i) {
-        var sign = r[opts.yKey] >= 0 ? "pos" : "neg";
-        if (!cur || cur.sign !== sign) { if (cur) segs.push(cur); cur = { sign: sign, pts: [] }; if (i > 0) cur.pts.push([xPos(i - 1), yPos(rows[i - 1][opts.yKey])]); }
-        cur.pts.push([xPos(i), yPos(r[opts.yKey])]);
+        var sign = r[yKey] >= 0 ? "pos" : "neg";
+        if (!cur || cur.sign !== sign) { if (cur) segs.push(cur); cur = { sign: sign, pts: [] }; if (i > 0) cur.pts.push([xPos(i - 1), yPos(rows[i - 1][yKey])]); }
+        cur.pts.push([xPos(i), yPos(r[yKey])]);
       });
       if (cur) segs.push(cur);
       segs.forEach(function (s) {
@@ -355,23 +381,45 @@
         var d = s.pts.map(function (p, i) { return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
         parts.push('<path class="series-line" d="' + d + '" stroke="' + color + '"/>');
       });
+      rows.forEach(function (r, i) {
+        var isLast = i === n - 1;
+        var color = r[yKey] >= 0 ? "var(--div-pos)" : "var(--div-neg)";
+        parts.push('<circle class="end-dot" cx="' + xPos(i) + '" cy="' + yPos(r[yKey]) + '" r="' + (isLast ? 4.5 : 3) + '" fill="' + color + '"/>');
+      });
     } else {
-      var d = rows.map(function (r, i) { return (i === 0 ? "M" : "L") + xPos(i).toFixed(1) + "," + yPos(r[opts.yKey]).toFixed(1); }).join(" ");
-      var areaD = d + " L" + xPos(n - 1).toFixed(1) + "," + yPos(nt.min).toFixed(1) + " L" + xPos(0).toFixed(1) + "," + yPos(nt.min).toFixed(1) + " Z";
-      parts.push('<path class="area-fill" d="' + areaD + '" fill="' + opts.color + '"/>');
-      parts.push('<path class="series-line" d="' + d + '" stroke="' + opts.color + '"/>');
+      series.forEach(function (s, si) {
+        var d = rows.map(function (r, i) { return (i === 0 ? "M" : "L") + xPos(i).toFixed(1) + "," + yPos(r[s.yKey]).toFixed(1); }).join(" ");
+        if (!multi) {
+          var areaD = d + " L" + xPos(n - 1).toFixed(1) + "," + yPos(nt.min).toFixed(1) + " L" + xPos(0).toFixed(1) + "," + yPos(nt.min).toFixed(1) + " Z";
+          parts.push('<path class="area-fill" d="' + areaD + '" fill="' + s.color + '"/>');
+        }
+        parts.push('<path class="series-line" d="' + d + '" stroke="' + s.color + '"/>');
+        rows.forEach(function (r, i) {
+          var isLast = i === n - 1;
+          parts.push('<circle class="end-dot" cx="' + xPos(i) + '" cy="' + yPos(r[s.yKey]) + '" r="' + (isLast ? 4.5 : 3) + '" fill="' + s.color + '"/>');
+        });
+      });
     }
-
-    rows.forEach(function (r, i) {
-      var isLast = i === n - 1;
-      var color = opts.diverging ? (r[opts.yKey] >= 0 ? "var(--div-pos)" : "var(--div-neg)") : opts.color;
-      parts.push('<circle class="end-dot" cx="' + xPos(i) + '" cy="' + yPos(r[opts.yKey]) + '" r="' + (isLast ? 4.5 : 3) + '" fill="' + color + '"/>');
-    });
 
     parts.push('<line class="hover-x" id="' + opts.svgId + '-hoverx" x1="0" x2="0" y1="' + PAD_T + '" y2="' + (H - PAD_B) + '"/>');
     parts.push('<rect class="hit-rect" x="0" y="0" width="' + W + '" height="' + H + '"/>');
 
     svg.innerHTML = parts.join("");
+
+    if (opts.legendId) {
+      var legend = document.getElementById(opts.legendId);
+      legend.innerHTML = "";
+      series.forEach(function (s) {
+        var item = document.createElement("div");
+        item.className = "legend-item";
+        var key = document.createElement("span");
+        key.className = "key"; key.style.background = s.color;
+        var label = document.createElement("span");
+        label.textContent = s.label;
+        item.appendChild(key); item.appendChild(label);
+        legend.appendChild(item);
+      });
+    }
 
     var tooltip = document.createElement("div");
     tooltip.className = "tooltip";
@@ -392,16 +440,29 @@
       var dateEl = document.createElement("div");
       dateEl.className = "t-date"; dateEl.textContent = r[opts.xKey];
       tooltip.appendChild(dateEl);
-      var row = document.createElement("div");
-      row.className = "t-row";
-      var k = document.createElement("span"); k.className = "t-k"; k.textContent = opts.tooltipLabel;
-      var v = document.createElement("span"); v.className = "t-v"; v.textContent = opts.fmtY(r[opts.yKey]);
-      row.appendChild(k); row.appendChild(v);
-      tooltip.appendChild(row);
+
+      var avgY = 0;
+      series.forEach(function (s) {
+        var yKey = opts.diverging ? s.yKey : s.yKey;
+        var val = r[yKey];
+        var color = opts.diverging ? (val >= 0 ? "var(--div-pos)" : "var(--div-neg)") : s.color;
+        avgY += yPos(val);
+        var row = document.createElement("div");
+        row.className = "t-row";
+        var kWrap = document.createElement("span"); kWrap.className = "t-k";
+        var keyStroke = document.createElement("span");
+        keyStroke.style.cssText = "display:inline-block;width:10px;height:2px;background:" + color + ";margin-right:5px;vertical-align:middle;border-radius:1px;";
+        kWrap.appendChild(keyStroke);
+        kWrap.appendChild(document.createTextNode(s.label));
+        var v = document.createElement("span"); v.className = "t-v"; v.textContent = opts.fmtY(val);
+        row.appendChild(kWrap); row.appendChild(v);
+        tooltip.appendChild(row);
+      });
+      avgY = avgY / series.length;
 
       var leftPct = (px / W) * 100;
       tooltip.style.left = leftPct + "%";
-      tooltip.style.top = (yPos(r[opts.yKey]) / H) * 100 + "%";
+      tooltip.style.top = (avgY / H) * 100 + "%";
       tooltip.style.opacity = 1;
     }
     function onLeave() { hoverLine.style.opacity = 0; tooltip.style.opacity = 0; }
@@ -452,9 +513,12 @@
       sparse.textContent = "Seulement " + data.days_tracked + " jour(s) suivi(s) — la courbe s'etoffera au fil des executions quotidiennes.";
     }
     renderLineChart({
-      svgId: "equity-chart", rows: data.rows, xKey: "date", yKey: "equity",
-      color: "var(--accent)", fmtY: function (v) { return "$" + Math.round(v).toLocaleString("en-US"); },
-      tooltipLabel: "Equity",
+      svgId: "equity-chart", rows: data.rows, xKey: "date", legendId: "equity-legend",
+      series: [
+        { yKey: "equity", color: "var(--accent)", label: "Strategie (carry)" },
+        { yKey: "buy_hold_equity", color: "var(--series-2)", label: "Buy & hold BTC" },
+      ],
+      fmtY: function (v) { return "$" + Math.round(v).toLocaleString("en-US"); },
     });
     renderLineChart({
       svgId: "basis-chart", rows: data.rows, xKey: "date", yKey: "basis_bps",
