@@ -6,9 +6,9 @@ Chaque jour, le bot ne voit que les donnees disponibles ce jour-la. Attendu : 0 
 
 | Enveloppe | Jours | Decisions differentes du backtest | Perf. bot | Perf. backtest 1h | Max DD bot | Max DD backtest 1h |
 |---|---|---|---|---|---|---|
-| G2-19 | 366 | 0 | +6.1% | +6.3% | -6.8% | -8.5% |
-| G2-25 | 366 | 0 | +7.6% | +7.9% | -8.9% | -11.0% |
-| G2-40 | 366 | 0 | +6.4% | +7.0% | -14.0% | -16.4% |
+| G2-19 | 366 | 0 | +6.1% | +6.2% | -6.8% | -8.5% |
+| G2-25 | 366 | 0 | +7.6% | +7.8% | -8.9% | -11.0% |
+| G2-40 | 366 | 0 | +6.4% | +6.8% | -14.0% | -16.4% |
 
 **OK : le bot reproduit exactement les decisions du backtest**
 
