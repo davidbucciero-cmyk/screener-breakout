@@ -72,6 +72,45 @@ Positions par mois : 128. Rotation mensuelle moyenne : 26%. Positions sans prix 
 | 2026 | -0.059 | +0.039 | -0.094 | +0.084 | +0.054 | +0.036 | +0.042 |
 | 2027 | -0.059 | +0.037 | -0.092 | +0.082 | +0.054 | +0.035 | +0.042 |
 
+## Diagnostic (mesure, pas un nouvel essai) : nos actions contre l'action moyenne de l'univers
+
+Les IC des blocs mesuraient la capacite a battre l'action moyenne (poids egal), pas le SPY.
+
+| Periode | Mois | Ecart annuel vs action moyenne | Sharpe de l'ecart | t-stat | Mois gagnants | IC moyen du score | t-stat IC |
+|---|---|---|---|---|---|---|---|
+| Dev 2010-2018 | 84 | +4.7% | 0.58 | 1.53 | 65% | +0.0856 | 5.25 |
+| Hors echantillon 2019-2026 | 92 | +4.7% | 0.45 | 1.24 | 60% | +0.1185 | 6.28 |
+
+| Annee | Nos actions | Action moyenne | SPY | Ecart vs action moyenne | Ecart action moyenne vs SPY |
+|---|---|---|---|---|---|
+| 2012 | +24.3% | +16.0% | +16.5% | +8.3% | -0.5% |
+| 2013 | +22.5% | +24.4% | +21.4% | -1.9% | +3.0% |
+| 2014 | +15.2% | +4.3% | +14.1% | +10.9% | -9.9% |
+| 2015 | +4.5% | -11.9% | -0.9% | +16.4% | -11.0% |
+| 2016 | +15.0% | +29.6% | +20.0% | -14.6% | +9.6% |
+| 2017 | +24.7% | +15.3% | +26.3% | +9.5% | -11.0% |
+| 2018 | -2.8% | -9.8% | -2.4% | +7.1% | -7.4% |
+| 2019 | +15.4% | +11.6% | +21.4% | +3.8% | -9.9% |
+| 2020 | +5.8% | +31.5% | +17.2% | -25.7% | +14.3% |
+| 2021 | +16.2% | -3.8% | +23.2% | +20.0% | -27.0% |
+| 2022 | -3.9% | -9.7% | -8.2% | +5.8% | -1.5% |
+| 2023 | +8.2% | -11.3% | +20.6% | +19.5% | -31.9% |
+| 2024 | +23.5% | +5.4% | +26.2% | +18.1% | -20.8% |
+| 2025 | +10.4% | +3.9% | +16.3% | +6.4% | -12.4% |
+| 2026 | +1.9% | +1.7% | +12.2% | +0.2% | -10.5% |
+
+### IC de chaque bloc : dev 2010-2018 vs hors echantillon 2019-2026
+
+| Bloc | IC dev | t dev | IC 2019-2026 | t 2019-2026 |
+|---|---|---|---|---|
+| C2_variation_actions_1an | -0.0527 | -6.17 | -0.0740 | -6.50 |
+| C1_marge_brute_sur_actifs | +0.0459 | +4.36 | +0.0568 | +6.03 |
+| B3_volatilite_12m | -0.0847 | -4.34 | -0.1121 | -5.38 |
+| B2_proximite_plus_haut_52s | +0.0686 | +4.01 | +0.1126 | +6.15 |
+| B1_momentum_12_1 | +0.0455 | +3.25 | +0.0750 | +4.99 |
+| C6_accruals | +0.0261 | +3.17 | +0.0525 | +6.74 |
+| A6_sma50_sup_sma200 | +0.0352 | +2.97 | +0.0593 | +4.49 |
+
 ## Limites
 
 - Biais du survivant : entreprises radiees absentes (ni ticker SEC ni prix Yahoo). Resultats flattes.
