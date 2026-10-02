@@ -15,11 +15,11 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 | F - RSI2 quotidien en tendance haussiere | +1.2% | 0.16 | 0.23 | -17.6% | 66.7% | 15 | 7% |
 | Reference - Buy & hold | +17.3% | 0.58 | 0.82 | -53.7% | nan% | 0 | 100% |
 | G - Rotation momentum BTC/ETH/SOL | +31.0% | 0.97 | 1.37 | -39.0% | 37.5% | 24 | 63% |
-| H - Trend diversifie BTC/ETH/SOL | +10.6% | 0.57 | 0.81 | -29.0% | 25.5% | 51 | 92% |
-| Reference - Buy & hold equipondere BTC/ETH/SOL | +7.3% | 0.41 | 0.59 | -65.4% | nan% | 0 | 100% |
+| H - Trend diversifie BTC/ETH/SOL | +10.5% | 0.57 | 0.80 | -29.0% | 25.5% | 51 | 92% |
+| Reference - Buy & hold equipondere BTC/ETH/SOL | +7.2% | 0.41 | 0.58 | -65.4% | nan% | 0 | 100% |
 | I - Momentum top 3 sur 11 cryptos | +7.1% | 0.38 | 0.54 | -48.9% | 40.4% | 94 | 83% |
 | J - Rotation G + filtre de financement | +21.5% | 0.76 | 1.07 | -39.0% | 40.6% | 32 | 58% |
-| K - Panier G + H + E | +18.2% | 0.81 | 1.15 | -31.4% | 31.4% | 86 | 93% |
+| K - Panier G + H + E | +18.1% | 0.81 | 1.15 | -31.4% | 31.4% | 86 | 93% |
 
 ## Verdict du gate
 
@@ -149,7 +149,7 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -3.4% | -0.62 |
 | baissier / vol haute | 134 | -9.4% | -1.62 |
-| haussier / vol basse | 169 | +1.3% | 0.18 |
+| haussier / vol basse | 169 | +1.1% | 0.17 |
 | haussier / vol haute | 93 | +111.7% | 2.98 |
 | range / vol basse | 207 | +16.7% | 0.71 |
 | range / vol haute | 32 | -35.1% | -2.88 |
@@ -160,7 +160,7 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | +4.0% | 0.30 |
 | baissier / vol haute | 134 | -31.2% | -0.16 |
-| haussier / vol basse | 169 | +2.7% | 0.30 |
+| haussier / vol basse | 169 | +2.5% | 0.30 |
 | haussier / vol haute | 93 | +518.3% | 3.49 |
 | range / vol basse | 207 | -4.8% | 0.24 |
 | range / vol haute | 32 | -87.4% | -2.93 |
@@ -171,7 +171,7 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -21.7% | -1.10 |
 | baissier / vol haute | 134 | -10.5% | -0.73 |
-| haussier / vol basse | 169 | +6.6% | 0.36 |
+| haussier / vol basse | 169 | +6.5% | 0.35 |
 | haussier / vol haute | 93 | +211.9% | 3.46 |
 | range / vol basse | 207 | -12.2% | -0.18 |
 | range / vol haute | 32 | -2.8% | -0.28 |
