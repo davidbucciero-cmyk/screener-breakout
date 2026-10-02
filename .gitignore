@@ -7,3 +7,4 @@ btc_forecast/output/
 
 .env
 bot/output/
+bot/equities/cache/

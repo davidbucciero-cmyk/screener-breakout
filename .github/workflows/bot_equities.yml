@@ -1,0 +1,46 @@
+name: Actions US - IC de chaque bloc (dev 2010-2018)
+
+on:
+  push:
+    branches: [claude/new-session-ylyiq6]
+    paths: ['bot/equities/**', '.github/workflows/bot_equities.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bot-equities
+  cancel-in-progress: true
+
+jobs:
+  ic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install pandas numpy requests yfinance pyarrow
+      - name: Cache des donnees brutes (SEC, Yahoo)
+        uses: actions/cache@v4
+        with:
+          path: bot/equities/cache
+          key: equities-raw-v1
+      - name: Donnees, panel et IC
+        run: python -m bot.equities.run
+      - name: Enregistrer le rapport
+        if: always()
+        run: |
+          git config user.name "bot-research"
+          git config user.email "bot-research@users.noreply.github.com"
+          git add bot/reports/equities_ic.md || true
+          if git diff --cached --quiet; then
+            echo "Aucun changement"
+          else
+            git commit -m "Actions US : IC par bloc $(date -u +%Y-%m-%d)"
+            git pull --rebase origin ${{ github.ref_name }}
+            git push origin HEAD:${{ github.ref_name }}
+          fi
