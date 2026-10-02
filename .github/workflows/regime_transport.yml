@@ -1,0 +1,32 @@
+name: Regime transport
+
+on:
+  push:
+    branches: [claude/sleepy-faraday-w7p1hk]
+    paths: ['regime_transport/**', '.github/workflows/regime_transport.yml']
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Tickers Yahoo, separes par des virgules'
+        default: 'BTC-USD,AMZN,NVDA,TSLA,SPY,GLD,TLT'
+      n_test:
+        description: 'Nb de dates testees par actif'
+        default: '750'
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy yfinance
+      - name: Transport de distributions vs references
+        run: python -m regime_transport.backtest "${{ inputs.tickers || 'BTC-USD,AMZN,NVDA,TSLA,SPY,GLD,TLT' }}" "${{ inputs.n_test || '750' }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regime-transport
+          path: output/
