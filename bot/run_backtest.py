@@ -36,10 +36,10 @@ def build_report(df, oos_years=2, others=None, funding=None):
     results = run_strategies(df)
     if others:
         dfs = {'BTCUSDT': df, **others}
+        three = {k: dfs[k] for k in SYMBOLS}  # G, H et leur reference : BTC/ETH/SOL uniquement
         for name, fn in MULTI.items():
-            results[name] = fn(dfs)[:2]
-        results['Reference - Buy & hold equipondere BTC/ETH/SOL'] = equal_weight_hold(dfs)[:2]
-        three = {k: dfs[k] for k in SYMBOLS}
+            results[name] = fn(three)[:2]
+        results['Reference - Buy & hold equipondere BTC/ETH/SOL'] = equal_weight_hold(three)[:2]
         if all(k in dfs for k in UNIVERSE):
             results['I - Momentum top 3 sur 11 cryptos'] = cross_sectional_momentum(
                 {k: dfs[k] for k in UNIVERSE})[:2]

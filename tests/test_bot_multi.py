@@ -67,3 +67,22 @@ def test_blend_averages_returns():
     t = pd.DataFrame({'entry_time': [], 'pnl': []})
     r, _ = blend((pd.Series([0.01, 0.0, 0.02], index=idx), t), (pd.Series([0.03, 0.0, 0.0], index=idx), t))
     assert list(r.round(4)) == [0.02, 0.0, 0.01]
+
+
+def test_report_runs_g_and_h_on_three_coins_only(monkeypatch):
+    import bot.run_backtest as rb
+    seen = []
+    monkeypatch.setattr(rb, 'MULTI', {'G - x': lambda d: (seen.append(sorted(d)), (pd.Series(0.0, index=d['BTCUSDT'].index),
+                                                         pd.DataFrame({'entry_time': [], 'pnl': []}), None))[1]})
+    monkeypatch.setattr(rb, 'blend', lambda *a: a[0])
+    from tests.test_bot_state import _candles
+    from bot.multi import UNIVERSE
+    n = 24 * 365 * 3
+    others = {s: _candles(n=n, seed=20 + i) for i, s in enumerate(UNIVERSE) if s != 'BTCUSDT'}
+    results = {}
+    monkeypatch.setitem(rb.__dict__, 'run_strategies', lambda df: results)
+    try:
+        rb.build_report(_candles(n=n), others=others)
+    except KeyError:
+        pass  # le panier K attend les vraies strategies ; seul l'univers passe a G nous interesse ici
+    assert seen == [['BTCUSDT', 'ETHUSDT', 'SOLUSDT']]
