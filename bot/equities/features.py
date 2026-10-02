@@ -38,7 +38,29 @@ def asof_wide(df, key, value, avail, dates, stale=None):
     return out
 
 
-def build_panel(close, tickers, shares, fund, purch):
+def to_price_basis(shares, splits, cik_to_ticker):
+    """Ramene le nombre d'actions declare a la SEC sur la base des prix Yahoo (ajustes des splits futurs).
+
+    Un split de ratio r (2.0 pour 2 pour 1, 0.1 pour un regroupement 1 pour 10) posterieur a la date du
+    nombre d'actions multiplie ce nombre par r ; le prix Yahoo de l'epoque est, lui, divise par r.
+    """
+    out = shares.copy()
+    if splits is None or len(splits) == 0:
+        return out
+    tick = out['cik'].map(cik_to_ticker)
+    factor = np.ones(len(out))
+    for t, g in splits[splits['ticker'].isin(set(tick.dropna()))].groupby('ticker'):
+        m = (tick == t).to_numpy()
+        ends = out.loc[m, 'end'].to_numpy(dtype='datetime64[ns]')
+        f = np.ones(m.sum())
+        for d, r in zip(pd.to_datetime(g['date']).to_numpy(dtype='datetime64[ns]'), g['ratio'].to_numpy(float)):
+            f *= np.where(ends < d, r, 1.0)
+        factor[m] = f
+    out['val'] = out['val'] * factor
+    return out
+
+
+def build_panel(close, tickers, shares, fund, purch, splits=None):
     t2c = tickers.drop_duplicates('cik').set_index('ticker')['cik']  # une classe d'action par entreprise
     cols = [t for t in close.columns if t in t2c.index]
     close = close[cols]
@@ -61,7 +83,8 @@ def build_panel(close, tickers, shares, fund, purch):
     def by_ticker(wide_cik):
         return pd.DataFrame(wide_cik.reindex(columns=cik_of.to_numpy()).to_numpy(), index=dates, columns=cols)
 
-    sh = shares.assign(avail=shares['end'] + SHARES_LAG)
+    sh = to_price_basis(shares, splits, pd.Series(cols, index=cik_of.to_numpy()))
+    sh = sh.assign(avail=sh['end'] + SHARES_LAG)
     sh_now = by_ticker(asof_wide(sh, 'cik', 'val', 'avail', dates, stale=STALE))
     sh_1y = by_ticker(asof_wide(sh, 'cik', 'val', 'avail', dates - pd.Timedelta(days=365), stale=STALE)
                       .set_axis(dates))

@@ -87,8 +87,8 @@ def report(years, ext, jumps, p):
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
-    tickers, shares, fund, purch, close, _ = load()
-    panel = build_panel(close, tickers, shares, fund, purch)
+    tickers, shares, fund, purch, close, _, splits = load()
+    panel = build_panel(close, tickers, shares, fund, purch, splits)
     text = report(*audit(panel, close, tickers))
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(text)

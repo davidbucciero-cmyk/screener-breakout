@@ -38,14 +38,16 @@ def load():
     shares = cached('shares', sec.shares_outstanding)
     fund = cached('fundamentals', sec.annual_fundamentals)
     purch = cached('insiders', insiders.purchases)
-    path = CACHE / 'close.parquet'
-    if path.exists():
-        close = pd.read_parquet(path)
+    path, spath = CACHE / 'close.parquet', CACHE / 'splits.parquet'
+    if path.exists() and spath.exists():
+        close, splits = pd.read_parquet(path), pd.read_parquet(spath)
         missing = []
     else:
-        close, _, missing = prices.download(tickers['ticker'].tolist())
+        close, _, missing, splits = prices.download(tickers['ticker'].tolist())
         close.to_parquet(path)
-    return tickers, shares, fund, purch, close, missing
+        splits.to_parquet(spath)
+    log.info(f'{len(splits)} splits connus')
+    return tickers, shares, fund, purch, close, missing, splits
 
 
 def report(ic, spread, panel, coverage):
@@ -75,8 +77,8 @@ def report(ic, spread, panel, coverage):
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
-    tickers, shares, fund, purch, close, missing = load()
-    panel = build_panel(close, tickers, shares, fund, purch)
+    tickers, shares, fund, purch, close, missing, splits = load()
+    panel = build_panel(close, tickers, shares, fund, purch, splits)
     dev = panel[panel['date'] <= END_DEV]
     coverage = {
         'Tickers SEC (NYSE + Nasdaq, aujourd\'hui)': len(tickers),

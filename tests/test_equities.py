@@ -100,3 +100,21 @@ def test_audit_flags_extremes_and_yearly_compounding():
     m = pd.Series([0.1, 0.1], index=pd.to_datetime(['2020-11-30', '2020-12-31']))
     y = yearly_from_monthly(m)
     assert y.loc[2020] == pytest.approx(0.1) and y.loc[2021] == pytest.approx(0.1)  # mois de rendement = mois suivant
+
+
+def test_reverse_split_does_not_inflate_market_cap_or_fake_buybacks():
+    close, tickers, shares, fund, purch = _data()
+    # T7 : penny stock a 1 $ avec 1 Md d'actions (cap 1 Md$), regroupement 1 pour 100 le 2017-01-03.
+    split_day = pd.Timestamp('2017-01-03')
+    raw = pd.Series(1.0, index=close.index)
+    raw[close.index >= split_day] = 100.0
+    close['T7'] = raw / np.where(close.index < split_day, 0.01, 1.0)  # prix Yahoo : passe ajuste (x100)
+    rows = shares['cik'] == 7
+    shares.loc[rows, 'val'] = np.where(shares.loc[rows, 'end'] < split_day, 1e9, 1e7)
+    splits = pd.DataFrame({'date': [split_day], 'ticker': ['T7'], 'ratio': [0.01]})
+    without = build_panel(close, tickers, shares, fund, purch).set_index(['date', 'ticker'])
+    fixed = build_panel(close, tickers, shares, fund, purch, splits).set_index(['date', 'ticker'])
+    d = pd.Timestamp('2016-06-30')
+    assert (d, 'T7') in without.index            # sans correction : cap fictive 100 Md$, entre dans l'univers
+    assert (d, 'T7') not in fixed.index          # avec correction : 1 Md$, hors univers
+    assert without.loc[(d, 'T7'), 'mcap'] == pytest.approx(1e11)

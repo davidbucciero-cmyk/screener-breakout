@@ -104,8 +104,8 @@ def build_report(res, weights, block_ics=None):
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
-    tickers, shares, fund, purch, close, _ = load()
-    panel = build_panel(close, tickers, shares, fund, purch)
+    tickers, shares, fund, purch, close, _, splits = load()
+    panel = build_panel(close, tickers, shares, fund, purch, splits)
     res = backtest(panel, spy_monthly())
     dev_ic = information_coefficients(panel, '2018-12-31', RETAINED).set_index('feature')
     oos_ic = information_coefficients(panel, '2100-01-01', RETAINED, start=OOS_START).set_index('feature')
