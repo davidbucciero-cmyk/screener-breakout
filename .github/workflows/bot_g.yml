@@ -3,7 +3,7 @@ name: Bot - ameliorations de G (periode jamais utilisee 2018-2022)
 on:
   push:
     branches: [claude/new-session-ylyiq6]
-    paths: ['bot/g_variants.py', 'bot/run_g.py', 'bot/run_g2.py', 'bot/multi.py', '.github/workflows/bot_g.yml']
+    paths: ['bot/g_variants.py', 'bot/run_g.py', 'bot/run_g2.py', 'bot/run_g2_long.py', 'bot/multi.py', '.github/workflows/bot_g.yml']
   workflow_dispatch:
 
 permissions:
@@ -24,17 +24,19 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - run: pip install pandas numpy requests pytest
-      - run: python -m pytest -q tests/test_g_variants.py tests/test_bot_multi.py tests/test_g2_final.py
+      - run: python -m pytest -q tests/test_g_variants.py tests/test_bot_multi.py tests/test_g2_final.py tests/test_g2_long.py
       - name: Ameliorations de G
         run: python -m bot.run_g
       - name: G2 dimensionnee, verdict final
         run: python -m bot.run_g2
+      - name: G2, confirmation octobre 2015 - mars 2018
+        run: python -m bot.run_g2_long
       - name: Enregistrer le rapport
         if: always()
         run: |
           git config user.name "bot-research"
           git config user.email "bot-research@users.noreply.github.com"
-          git add bot/reports/g_ameliorations.md bot/reports/g2_final.md || true
+          git add bot/reports/g_ameliorations.md bot/reports/g2_final.md bot/reports/g2_confirmation_2015.md || true
           if git diff --cached --quiet; then
             echo "Aucun changement"
           else
