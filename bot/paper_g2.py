@@ -43,6 +43,7 @@ def save_state(st):
 
 
 def append(name, row):
+    DIR.mkdir(parents=True, exist_ok=True)
     p = DIR / name
     new = not p.exists()
     with open(p, 'a', newline='') as f:
@@ -118,9 +119,23 @@ def run(broker, github, now=None):
         log.info(f'{day} deja traite')
         return st, []
     prices = daily.iloc[-1].to_dict()
-    orders, events = L.plan_orders(st, daily, prices)
     held = broker.positions()
-    lines = [f'{n} : {why}' for n, why in events]
+    lines = []
+    if st['start'] is None:
+        # Premier demarrage : le compte ne doit detenir aucune crypto inconnue des enveloppes (ex. un ordre
+        # passe lors d'une execution interrompue). On les revend pour partir de zero.
+        for sym, pair in L.SYMBOLS.items():
+            q = held.get(sym.replace('USDT', 'USD'), 0.0)
+            if q > 0:
+                fill = broker.market(pair, -q)
+                lines.append(f"Initialisation : vente de {q:.6f} {sym.replace('USDT', '')} non suivi ({fill['status']})")
+                append('ordres.csv', {'date': day, 'enveloppe': 'init', 'symbole': sym, 'quantite': -q,
+                                      'prix': fill.get('price'), 'id': fill.get('id')})
+                held[sym.replace('USDT', 'USD')] = 0.0
+        st['start'] = day
+        save_state(st)
+    orders, events = L.plan_orders(st, daily, prices)
+    lines += [f'{n} : {why}' for n, why in events]
     for name, sym, qty in orders:
         price, key = prices[sym], sym.replace('USDT', 'USD')
         if qty < 0:  # jamais vendre plus que la position reelle
@@ -143,6 +158,7 @@ def run(broker, github, now=None):
         lines.append(f"{name} {sym} : {fill['filled_qty']:+.6f} a {fill['price']:,.2f} $")
         append('ordres.csv', {'date': day, 'enveloppe': name, 'symbole': sym, 'quantite': fill['filled_qty'],
                               'prix': fill['price'], 'id': fill['id']})
+        save_state(st)  # apres chaque ordre : une relance ne peut pas racheter en double
     for name in L.SLEEVES:
         sl = st['sleeves'][name]
         eq = L.equity(sl, prices)
