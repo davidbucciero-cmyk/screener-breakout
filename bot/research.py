@@ -131,8 +131,7 @@ def report(table):
              f'non chevauchants, donnees avant le {OOS_START:%Y-%m-%d} uniquement.',
              f'Avec {len(table)} features testees, un |t| > {_bonferroni(len(table)):.2f} est requis pour ecarter le hasard.',
              '', head, '|' + '---|' * (6 + len(years))]
-    for r in table.itertuples(index=False):
-        d = r._asdict()
+    for d in table.to_dict('records'):
         yrs = ' | '.join('' if pd.isna(d[y]) else f'{d[y]:+.2f}' for y in years)
         lines.append(f"| {d['feature']} | {d['debut']} | {d['semaines']} | {d['ic']:+.3f} | {d['t_stat']:+.2f} "
                      f"| {d['annees_meme_signe']} | {yrs} |")

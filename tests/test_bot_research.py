@@ -51,3 +51,10 @@ def test_features_from_committed_blocks_load():
     f = rs.build_features(_btc(n=3200))
     for col in ('dvol', 'mvrv', 'stablecoins_croiss_30j', 'fear_greed'):
         assert col in f and f[col].notna().sum() > 500
+
+
+def test_report_renders_with_year_columns():
+    c = _btc(n=3200)
+    table = rs.information_coefficients(rs.build_features(c), rs.target(c))
+    text = rs.report(table.rename(columns=str))
+    assert '| fear_greed |' in text and '2019' in text
