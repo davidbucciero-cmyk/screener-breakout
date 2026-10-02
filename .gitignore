@@ -5,3 +5,5 @@ screener/data/screener.db
 screener/logs/
 btc_forecast/output/
 
+.env
+bot/output/
