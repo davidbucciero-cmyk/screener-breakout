@@ -13,7 +13,9 @@ URL = 'https://www.bitmex.com/api/v1/funding'
 
 
 def fetch_funding(start, symbol='XBTUSD'):
-    rows, cursor = [], pd.Timestamp(start)
+    cursor = pd.Timestamp(start)
+    cursor = cursor.tz_localize('UTC') if cursor.tzinfo is None else cursor
+    rows = []
     while True:
         r = requests.get(URL, params={'symbol': symbol, 'count': 500, 'reverse': 'false',
                                       'startTime': cursor.isoformat()}, timeout=30)

@@ -99,7 +99,8 @@ def onchain(start='2017-01-01'):
     return pd.DataFrame(out).sort_index()
 
 
-FRED = {'nasdaq': 'NASDAQCOM', 'dollar': 'DTWEXBGS', 'taux_10a': 'DGS10', 'or': 'GOLDAMGBD228NLBM'}
+# FRED ne repond pas depuis les runners GitHub : on passe par des ETF (Yahoo, repli Stooq).
+MACRO_ETF = {'nasdaq': 'QQQ', 'dollar': 'UUP', 'obligations_10a': 'IEF', 'or': 'GLD'}
 
 
 def parse_fred_csv(text, name):
@@ -110,13 +111,14 @@ def parse_fred_csv(text, name):
 
 
 def macro():
+    from btc_forecast.data import fetch_daily
     out = {}
-    for name, sid in FRED.items():
+    for name, sym in MACRO_ETF.items():
         try:
-            text = _get('https://fred.stlouisfed.org/graph/fredgraph.csv', {'id': sid}).text
-            out[name] = parse_fred_csv(text, name)
+            df = fetch_daily(sym, bars=4000)
+            out[name] = df.loc[df['trading'], 'close']  # jours de bourse seulement
         except Exception as e:
-            log.warning(f'FRED {sid} indisponible : {e}')
+            log.warning(f'{sym} indisponible : {e}')
     return pd.DataFrame(out).sort_index()
 
 
@@ -132,5 +134,5 @@ BLOCKS = {
     '9 - Offre de stablecoins (DefiLlama)': stablecoins,
     '10 - TVL DeFi (DefiLlama)': defi_tvl,
     '12 - Fear & Greed (alternative.me)': fear_greed,
-    '16 - Macro US (FRED)': macro,
+    '16 - Macro US (ETF QQQ/UUP/IEF/GLD)': macro,
 }

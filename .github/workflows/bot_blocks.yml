@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-      - run: pip install pandas numpy requests
+      - run: pip install pandas numpy requests yfinance
       - name: Recuperation des blocs
         continue-on-error: true
         run: python -m bot.probe_blocks

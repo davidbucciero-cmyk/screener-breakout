@@ -37,3 +37,17 @@ def test_publication_lag_shifts_onchain(monkeypatch, tmp_path):
     pd.DataFrame({'AdrActCnt': range(10)}, index=idx).to_csv(tmp_path / '8.csv')
     df = rs._load('8')
     assert df.loc[pd.Timestamp('2020-01-02', tz='UTC'), 'AdrActCnt'] == 0  # valeur du 1er connue le 2
+
+
+def test_empty_block_file_is_ignored(monkeypatch, tmp_path):
+    monkeypatch.setattr(rs, 'DATA', tmp_path)
+    (tmp_path / '16.csv').write_text('""\n')
+    assert rs._load('16') is None
+    f = rs.build_features(_btc())
+    assert 'nasdaq_mom_20j' not in f
+
+
+def test_features_from_committed_blocks_load():
+    f = rs.build_features(_btc(n=3200))
+    for col in ('dvol', 'mvrv', 'stablecoins_croiss_30j', 'fear_greed'):
+        assert col in f and f[col].notna().sum() > 500

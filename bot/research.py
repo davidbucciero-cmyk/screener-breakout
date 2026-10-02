@@ -24,8 +24,13 @@ def _load(block):
     path = DATA / f'{block}.csv'
     if not path.exists():
         return None
-    df = pd.read_csv(path, index_col=0, parse_dates=True)
-    df.index = pd.DatetimeIndex(df.index).tz_convert('UTC') if df.index.tz else pd.DatetimeIndex(df.index).tz_localize('UTC')
+    try:
+        df = pd.read_csv(path, index_col=0)
+    except pd.errors.EmptyDataError:
+        return None
+    if df.empty:
+        return None
+    df.index = pd.to_datetime(df.index, utc=True).normalize()
     return df.shift(PUBLICATION_LAG.get(block, 0), freq='D')
 
 
@@ -79,14 +84,10 @@ def build_features(btc_close):
     if fg is not None:
         f['fear_greed'] = fg
         f['fear_greed_var_7j'] = fg - fg.shift(7)
-    for col, name, fn in [('nasdaq', 'nasdaq_mom_20j', _growth), ('dollar', 'dollar_mom_20j', _growth),
-                          ('or', 'or_mom_20j', _growth)]:
+    for col in ('nasdaq', 'dollar', 'obligations_10a', 'or'):
         s = daily('16', col)
         if s is not None:
-            f[name] = fn(s, 20)
-    ty = daily('16', 'taux_10a')
-    if ty is not None:
-        f['taux_10a_var_20j'] = ty - ty.shift(20)
+            f[f'{col}_mom_20j'] = _growth(s, 20)
     return f
 
 
