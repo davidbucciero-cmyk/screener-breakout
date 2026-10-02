@@ -89,3 +89,10 @@ Rollback : chaque etape est un commit ; le bot lit `strategy.md` versionne, reve
 - **Frais** : 25 bps par cote sur Alpaca crypto. Une strategie qui trade souvent en 1h meurt la-dessus.
 - **GitHub Actions** : les cron peuvent avoir 5-20 min de retard ; acceptable en 1h, pas en "chaque bougie sub-seconde".
 - **Sharpe > 1,5 hors echantillon** sur BTC long-only est un seuil tres dur ; s'attendre a ce que rien ne passe.
+
+## Revision du gate (decision de l'utilisateur, 2026-10-02, avant le test final de G2)
+- Drawdown max : -20 % (au lieu de -15 %).
+- Taux de reussite > 55 % remplace par **profit factor > 1,5** (somme des gains / somme des pertes) :
+  le taux de reussite penalise les strategies de momentum, qui gagnent rarement mais gros.
+- Sharpe > 1,5 et t-stat corrigee du nombre d'essais : inchanges.
+- Evaluation uniquement sur avril 2018 - septembre 2022, periode jamais utilisee avant ces tests.

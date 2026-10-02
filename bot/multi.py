@@ -44,7 +44,7 @@ def _apply(hourly, w_daily):
     return r, trades.sort_values('entry_time').reset_index(drop=True), w
 
 
-def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None):
+def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None, target_vol=TARGET_VOL):
     """Chaque dimanche : les top_k cryptos au meilleur rendement `lookback` j, si ce rendement est > 0.
 
     Chaque ligne pese 1/top_k, reduite pour viser 40 % de vol. risk_off (booleen quotidien, connu a
@@ -58,7 +58,7 @@ def rotation_momentum(dfs, lookback=30, top_k=1, risk_off=None, lookbacks=None):
     vol = daily.pct_change(fill_method=None).rolling(30).std() * math.sqrt(365)
     rank = mom.rank(axis=1, ascending=False, method='first')
     sel = (rank <= top_k) & (mom > 0) & (vol > 0)
-    w = (sel * (TARGET_VOL / vol).clip(upper=1.0) / top_k).fillna(0.0)
+    w = (sel * (target_vol / vol).clip(upper=1.0) / top_k).fillna(0.0)
     # Re-balance hebdomadaire (cloture du dimanche), poids tenus jusqu'au suivant.
     w = w[w.index.dayofweek == 6].reindex(w.index).ffill().fillna(0.0)
     if risk_off is not None:
