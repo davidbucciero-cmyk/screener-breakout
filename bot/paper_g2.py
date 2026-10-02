@@ -14,6 +14,8 @@ import logging
 import os
 import smtplib
 import sys
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
@@ -86,12 +88,17 @@ class GitHub:
         requests.patch(self._url(f'/issues/{number}'), headers=self.h, json={'state': 'closed'}, timeout=30)
 
 
-def send_email(subject, body):
+def send_email(subject, body, attachment=None):
     pwd = os.environ.get('EMAIL_PASSWORD')
     if not pwd:
         log.warning('EMAIL_PASSWORD absent : email ignore')
         return
-    msg = MIMEText(body, 'plain', 'utf-8')
+    msg = MIMEMultipart()
+    msg.attach(MIMEText(body, 'plain', 'utf-8'))
+    if attachment and Path(attachment).exists():  # tableau de bord : ouvrir dans un navigateur
+        part = MIMEApplication(Path(attachment).read_bytes(), Name='suivi_g2.html')
+        part['Content-Disposition'] = 'attachment; filename="suivi_g2.html"'
+        msg.attach(part)
     msg['Subject'], msg['From'], msg['To'] = subject, EMAIL_FROM, EMAIL_TO
     with smtplib.SMTP('smtp.gmail.com', 587) as s:
         s.starttls()
@@ -158,11 +165,19 @@ def main():
     except Exception as e:
         send_email('G2 paper : ERREUR, aucun ordre passe', f'{type(e).__name__}: {e}')
         raise
-    prices = {s: float(fetch_btc('1d', bars=2, symbol=s)['close'].iloc[-1]) for s in L.SYMBOLS}
+    from bot.dashboard_g2 import build
+    daily = pd.DataFrame({s: fetch_btc('1d', bars=800, symbol=s)['close'] for s in L.SYMBOLS})
+    try:
+        dash = build(daily)
+    except Exception as e:  # le tableau de bord ne doit jamais bloquer le trading
+        log.warning(f'Tableau de bord non genere : {e}')
+        dash = None
+    prices = daily.iloc[-1].to_dict()
     summary = '\n'.join(f"{n} : {L.equity(sl, prices):,.0f} $ (pic {sl['peak']:,.0f} $){' ARRETEE' if sl['halted'] else ''}"
                         for n, sl in st['sleeves'].items())
     if lines or pd.Timestamp.now(tz='UTC').dayofweek == 0:
-        send_email(f"G2 paper {st['last_date']}", '\n'.join(lines or ['Aucun ordre.']) + '\n\n' + summary)
+        send_email(f"G2 paper {st['last_date']}", '\n'.join(lines or ['Aucun ordre.']) + '\n\n' + summary
+                   + '\n\nTableau de bord en piece jointe (ouvrir dans un navigateur).', attachment=dash)
     print('\n'.join(lines), '\n', summary)
 
 

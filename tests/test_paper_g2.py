@@ -69,3 +69,17 @@ def test_stale_data_raises_without_orders(market):
     with pytest.raises(RuntimeError):
         P.run(broker, FakeGitHub(), now=market + pd.Timedelta(days=3))
     assert not broker.orders
+
+
+def test_dashboard_renders_after_a_trading_day(market, monkeypatch, tmp_path):
+    from bot import dashboard_g2 as Dsh
+    monkeypatch.setattr(Dsh, 'DIR', tmp_path)
+    P.run(FakeBroker(), FakeGitHub(), now=market)
+    html = Dsh.build().read_text()
+    assert 'G2-19' in html and 'const D = {' in html and '__DATA__' not in html
+
+
+def test_dashboard_renders_before_first_day(monkeypatch, tmp_path):
+    from bot import dashboard_g2 as Dsh
+    monkeypatch.setattr(Dsh, 'DIR', tmp_path)
+    assert 'pas encore' in Dsh.build().read_text().lower()

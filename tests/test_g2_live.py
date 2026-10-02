@@ -104,3 +104,17 @@ def test_replay_and_bands_on_synthetic_data():
     text, ok = report(rep, start, b)
     assert ok and 'G2-40' in text
     assert b['G2-19']['3 mois']['rendement']['p5'] <= b['G2-19']['3 mois']['rendement']['p95']
+
+
+def test_no_daily_churn_inside_rebalance_band():
+    st = _state()
+    sl = st['sleeves']['G2-19']
+    full = _daily()
+    d = next(full.iloc[:n] for n in range(300, len(full)) if L.decide(full.iloc[:n], 0.19).max() > 0)
+    prices = d.iloc[-1].to_dict()
+    w = L.decide(d, 0.19)
+    held = w.idxmax()
+    sl['qty'][held] = w[held] * L.ENVELOPE / prices[held] * 1.03   # 3 % d'ecart : pas d'ordre
+    sl['cash'] = L.ENVELOPE - sl['qty'][held] * prices[held]
+    orders, _ = L.plan_orders(st, d, prices)
+    assert not [o for o in orders if o[0] == 'G2-19']

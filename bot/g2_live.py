@@ -22,6 +22,7 @@ SLEEVES = {'G2-19': {'target_vol': 0.19, 'kill_dd': 0.20},
            'G2-40': {'target_vol': 0.40, 'kill_dd': 0.35}}
 APPROVAL_USD = 5_000.0      # au-dessus : validation manuelle (label `approved` sur l'issue GitHub)
 MIN_ORDER_USD = 10.0
+REBALANCE_BAND = 0.10        # hors entree/sortie, on ne reajuste que si l'ecart depasse 10 % de l'enveloppe
 FEE = 0.0025                # frais taker Alpaca crypto, imputes aux enveloppes
 MAX_DATA_AGE = pd.Timedelta(hours=26)
 ALPACA_PAPER = 'https://paper-api.alpaca.markets'  # en dur : impossible de viser le compte reel par erreur
@@ -102,9 +103,13 @@ def plan_orders(state, daily, prices):
             w = decide(daily, cfg['target_vol'])
             eq = equity(sl, prices)
             target = RiskBook.clip_targets({s: w.get(s, 0.0) * eq / prices[s] for s in SYMBOLS}, sl, prices, no_buy)
+        eq = equity(sl, prices)
         for s in SYMBOLS:
             q = target[s] - sl['qty'][s]
-            if abs(q) * prices[s] >= MIN_ORDER_USD or (q < 0 and target[s] == 0 and sl['qty'][s] > 0):
+            exit_all = target[s] == 0 and sl['qty'][s] > 0
+            entry = sl['qty'][s] * prices[s] < MIN_ORDER_USD and target[s] * prices[s] >= MIN_ORDER_USD
+            drift = abs(q) * prices[s] >= max(MIN_ORDER_USD, REBALANCE_BAND * eq)
+            if exit_all or entry or drift:
                 orders.append((name, s, q))
     return orders, events
 
