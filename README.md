@@ -15,6 +15,20 @@ au commit `c9cb4c6` (dernier etat de `main` avant la remise a zero).
 | Rapports | `bot/reports/` |
 | Workflows GitHub Actions | `.github/workflows/` |
 
+## Cles API conservees
+
+Les cles sont des secrets GitHub (Settings > Secrets and variables > Actions). Elles ne sont pas
+dans le code et ne sont pas touchees par la remise a zero : elles restent disponibles pour les
+prochains projets.
+
+| Secret | Service |
+|---|---|
+| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Alpaca (compte paper) |
+| `ANTHROPIC_API_KEY` | API Claude |
+| `TYPESAFE_API_KEY` | Jev (Typesafe) |
+| `FMP_API_KEY` | Financial Modeling Prep (screener) |
+| `EMAIL_PASSWORD` | Envoi des emails du screener |
+
 ## Recuperer l'archive
 
 Tout restaurer :
