@@ -1,25 +1,25 @@
 # Backtest BTC/USD 1h
 
-Donnees Binance BTCUSDT du 2022-10-03 au 2026-10-02 17:00 UTC. Couts : 25 bps de frais + 5 bps de slippage par cote.
-Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > -15%, taux de reussite > 55%, t-stat > 2.87 (2.0 corrige de Bonferroni pour 11 strategies testees).
+Donnees Binance BTCUSDT du 2022-10-07 au 2026-10-06 13:00 UTC. Couts : 25 bps de frais + 5 bps de slippage par cote.
+Hors echantillon (gate) : a partir du 2024-10-06. Gate : Sharpe > 1.5, max DD > -15%, taux de reussite > 55%, t-stat > 2.87 (2.0 corrige de Bonferroni pour 11 strategies testees).
 
 ## Hors echantillon
 
 | Strategie | Rdt annuel | Sharpe | t-stat | Max DD | Taux reussite | Trades | Expo |
 |---|---|---|---|---|---|---|---|
 | A - Breakout mat-fanion 1h | -7.6% | -0.50 | -0.71 | -26.6% | 41.2% | 34 | 8% |
-| B - Trend ensemble + ciblage vol | +13.7% | 0.63 | 0.89 | -31.9% | 7.1% | 14 | 86% |
+| B - Trend ensemble + ciblage vol | +13.9% | 0.64 | 0.90 | -31.9% | 7.1% | 14 | 86% |
 | C - Mat-fanion filtre par la tendance | +1.0% | 0.14 | 0.20 | -15.0% | 45.8% | 24 | 6% |
-| D - Retour a la moyenne 1h en range | -29.0% | -2.20 | -3.12 | -49.5% | 27.8% | 97 | 6% |
-| E - Cassure Donchian 20/10 j | +11.0% | 0.54 | 0.77 | -37.1% | 45.5% | 11 | 49% |
+| D - Retour a la moyenne 1h en range | -28.4% | -2.15 | -3.05 | -48.8% | 27.8% | 97 | 6% |
+| E - Cassure Donchian 20/10 j | +12.0% | 0.57 | 0.81 | -37.1% | 45.5% | 11 | 50% |
 | F - RSI2 quotidien en tendance haussiere | +1.2% | 0.16 | 0.23 | -17.6% | 66.7% | 15 | 7% |
-| Reference - Buy & hold | +17.1% | 0.58 | 0.82 | -53.7% | nan% | 0 | 100% |
-| G - Rotation momentum BTC/ETH/SOL | +31.4% | 0.98 | 1.39 | -39.0% | 37.5% | 24 | 63% |
-| H - Trend diversifie BTC/ETH/SOL | +10.6% | 0.57 | 0.81 | -29.0% | 25.5% | 51 | 92% |
-| Reference - Buy & hold equipondere BTC/ETH/SOL | +7.4% | 0.42 | 0.59 | -65.4% | nan% | 0 | 100% |
-| I - Momentum top 3 sur 11 cryptos | +7.3% | 0.38 | 0.54 | -48.9% | 40.4% | 94 | 83% |
-| J - Rotation G + filtre de financement | +21.9% | 0.77 | 1.08 | -39.0% | 40.6% | 32 | 58% |
-| K - Panier G + H + E | +18.2% | 0.81 | 1.15 | -31.4% | 31.4% | 86 | 93% |
+| Reference - Buy & hold | +17.8% | 0.59 | 0.83 | -53.7% | nan% | 0 | 100% |
+| G - Rotation momentum BTC/ETH/SOL | +32.1% | 1.00 | 1.41 | -39.0% | 37.5% | 24 | 63% |
+| H - Trend diversifie BTC/ETH/SOL | +11.1% | 0.59 | 0.84 | -29.0% | 25.5% | 51 | 92% |
+| Reference - Buy & hold equipondere BTC/ETH/SOL | +8.2% | 0.43 | 0.61 | -65.4% | nan% | 0 | 100% |
+| I - Momentum top 3 sur 11 cryptos | +6.9% | 0.37 | 0.53 | -48.9% | 41.1% | 95 | 83% |
+| J - Rotation G + filtre de financement | +22.5% | 0.78 | 1.11 | -39.0% | 40.6% | 32 | 58% |
+| K - Panier G + H + E | +18.9% | 0.84 | 1.19 | -31.4% | 31.4% | 86 | 93% |
 
 ## Verdict du gate
 
@@ -40,18 +40,18 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 | Strategie | Rdt annuel | Sharpe | t-stat | Max DD | Taux reussite | Trades | Expo |
 |---|---|---|---|---|---|---|---|
 | A - Breakout mat-fanion 1h | -5.7% | -0.34 | -0.48 | -19.5% | 32.5% | 40 | 9% |
-| B - Trend ensemble + ciblage vol | +36.5% | 1.32 | 1.86 | -22.8% | 100.0% | 1 | 66% |
+| B - Trend ensemble + ciblage vol | +38.0% | 1.36 | 1.92 | -22.8% | 100.0% | 1 | 66% |
 | C - Mat-fanion filtre par la tendance | +1.3% | 0.17 | 0.24 | -15.1% | 40.0% | 25 | 7% |
-| D - Retour a la moyenne 1h en range | -28.3% | -2.59 | -3.66 | -51.6% | 26.0% | 96 | 6% |
-| E - Cassure Donchian 20/10 j | +22.3% | 0.85 | 1.20 | -23.1% | 38.5% | 13 | 46% |
-| F - RSI2 quotidien en tendance haussiere | +6.8% | 0.49 | 0.70 | -27.9% | 71.4% | 21 | 11% |
-| Reference - Buy & hold | +77.4% | 1.41 | 2.00 | -32.3% | 100.0% | 1 | 100% |
-| G - Rotation momentum BTC/ETH/SOL | +34.3% | 1.02 | 1.44 | -35.5% | 42.3% | 26 | 67% |
-| H - Trend diversifie BTC/ETH/SOL | +34.5% | 1.41 | 2.00 | -20.6% | 37.5% | 8 | 66% |
-| Reference - Buy & hold equipondere BTC/ETH/SOL | +83.9% | 1.29 | 1.82 | -48.6% | 100.0% | 3 | 100% |
-| I - Momentum top 3 sur 11 cryptos | +16.9% | 0.68 | 0.96 | -33.8% | 46.7% | 90 | 80% |
-| J - Rotation G + filtre de financement | +6.9% | 0.38 | 0.54 | -26.7% | 57.1% | 35 | 47% |
-| K - Panier G + H + E | +31.8% | 1.25 | 1.77 | -23.2% | 40.4% | 47 | 87% |
+| D - Retour a la moyenne 1h en range | -29.0% | -2.67 | -3.77 | -51.9% | 26.0% | 96 | 6% |
+| E - Cassure Donchian 20/10 j | +20.1% | 0.79 | 1.12 | -23.1% | 38.5% | 13 | 46% |
+| F - RSI2 quotidien en tendance haussiere | +5.2% | 0.41 | 0.57 | -27.9% | 70.0% | 20 | 11% |
+| Reference - Buy & hold | +77.9% | 1.42 | 2.01 | -32.3% | 100.0% | 1 | 100% |
+| G - Rotation momentum BTC/ETH/SOL | +33.9% | 1.01 | 1.43 | -35.5% | 42.3% | 26 | 67% |
+| H - Trend diversifie BTC/ETH/SOL | +35.2% | 1.44 | 2.04 | -21.4% | 37.5% | 8 | 66% |
+| Reference - Buy & hold equipondere BTC/ETH/SOL | +83.4% | 1.28 | 1.81 | -48.6% | 100.0% | 3 | 100% |
+| I - Momentum top 3 sur 11 cryptos | +17.3% | 0.69 | 0.98 | -33.8% | 46.7% | 90 | 80% |
+| J - Rotation G + filtre de financement | +6.6% | 0.37 | 0.52 | -26.7% | 57.1% | 35 | 48% |
+| K - Panier G + H + E | +31.1% | 1.23 | 1.74 | -24.4% | 40.4% | 47 | 87% |
 
 ## Hors echantillon par regime
 
@@ -61,10 +61,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -15.9% | -2.43 |
 | baissier / vol haute | 134 | -24.2% | -2.29 |
-| haussier / vol basse | 169 | -19.8% | -1.91 |
-| haussier / vol haute | 93 | +8.7% | 0.48 |
-| range / vol basse | 207 | +18.1% | 1.19 |
-| range / vol haute | 32 | -25.1% | -2.58 |
+| haussier / vol basse | 173 | -19.4% | -1.89 |
+| haussier / vol haute | 92 | +8.8% | 0.49 |
+| range / vol basse | 205 | +18.3% | 1.19 |
+| range / vol haute | 31 | -25.8% | -2.62 |
 
 ### B - Trend ensemble + ciblage vol
 
@@ -72,10 +72,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -11.4% | -1.97 |
 | baissier / vol haute | 134 | -14.1% | -1.37 |
-| haussier / vol basse | 169 | +1.1% | 0.19 |
-| haussier / vol haute | 93 | +162.5% | 3.18 |
-| range / vol basse | 207 | +27.2% | 0.98 |
-| range / vol haute | 32 | -38.9% | -2.36 |
+| haussier / vol basse | 173 | +9.2% | 0.43 |
+| haussier / vol haute | 92 | +139.7% | 2.91 |
+| range / vol basse | 205 | +25.1% | 0.92 |
+| range / vol haute | 31 | -37.5% | -2.20 |
 
 ### C - Mat-fanion filtre par la tendance
 
@@ -83,10 +83,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | +0.0% | nan |
 | baissier / vol haute | 134 | +9.1% | 1.65 |
-| haussier / vol basse | 169 | -19.8% | -1.91 |
-| haussier / vol haute | 93 | +8.7% | 0.48 |
-| range / vol basse | 207 | +18.1% | 1.19 |
-| range / vol haute | 32 | -25.1% | -2.58 |
+| haussier / vol basse | 173 | -19.4% | -1.89 |
+| haussier / vol haute | 92 | +8.8% | 0.49 |
+| range / vol basse | 205 | +18.3% | 1.19 |
+| range / vol haute | 31 | -25.8% | -2.62 |
 
 ### D - Retour a la moyenne 1h en range
 
@@ -94,10 +94,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -14.8% | -3.25 |
 | baissier / vol haute | 134 | +0.0% | nan |
-| haussier / vol basse | 169 | +0.0% | nan |
-| haussier / vol haute | 93 | +0.0% | nan |
-| range / vol basse | 207 | -70.8% | -4.45 |
-| range / vol haute | 32 | +84.0% | 3.71 |
+| haussier / vol basse | 173 | +0.0% | nan |
+| haussier / vol haute | 92 | +0.0% | nan |
+| range / vol basse | 205 | -70.2% | -4.37 |
+| range / vol haute | 31 | +87.6% | 3.77 |
 
 ### E - Cassure Donchian 20/10 j
 
@@ -105,10 +105,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -6.0% | -0.44 |
 | baissier / vol haute | 134 | -8.0% | -0.70 |
-| haussier / vol basse | 169 | +1.1% | 0.19 |
-| haussier / vol haute | 93 | +137.0% | 2.62 |
-| range / vol basse | 207 | -4.5% | -0.04 |
-| range / vol haute | 32 | +94.4% | 4.26 |
+| haussier / vol basse | 173 | +12.4% | 0.53 |
+| haussier / vol haute | 92 | +109.2% | 2.29 |
+| range / vol basse | 205 | -5.2% | -0.06 |
+| range / vol haute | 31 | +107.1% | 4.61 |
 
 ### F - RSI2 quotidien en tendance haussiere
 
@@ -116,10 +116,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | +2.1% | 1.95 |
 | baissier / vol haute | 134 | +0.0% | nan |
-| haussier / vol basse | 169 | -1.5% | -0.09 |
-| haussier / vol haute | 93 | +22.5% | 2.24 |
-| range / vol basse | 207 | +3.4% | 0.29 |
-| range / vol haute | 32 | -41.0% | -4.65 |
+| haussier / vol basse | 173 | +5.5% | 0.53 |
+| haussier / vol haute | 92 | +8.0% | 1.19 |
+| range / vol basse | 205 | +3.4% | 0.30 |
+| range / vol haute | 31 | -42.0% | -4.73 |
 
 ### Reference - Buy & hold
 
@@ -127,10 +127,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -18.9% | -0.47 |
 | baissier / vol haute | 134 | -3.6% | 0.23 |
-| haussier / vol basse | 169 | +4.1% | 0.29 |
-| haussier / vol haute | 93 | +321.1% | 3.41 |
-| range / vol basse | 207 | +13.4% | 0.51 |
-| range / vol haute | 32 | -55.9% | -1.71 |
+| haussier / vol basse | 173 | +16.8% | 0.60 |
+| haussier / vol haute | 92 | +266.3% | 3.12 |
+| range / vol basse | 205 | +11.8% | 0.47 |
+| range / vol haute | 31 | -55.0% | -1.63 |
 
 ### G - Rotation momentum BTC/ETH/SOL
 
@@ -138,10 +138,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -30.9% | -2.10 |
 | baissier / vol haute | 134 | -2.6% | -0.13 |
-| haussier / vol basse | 169 | +44.1% | 1.17 |
-| haussier / vol haute | 93 | +139.5% | 2.53 |
-| range / vol basse | 207 | +58.8% | 1.25 |
-| range / vol haute | 32 | +0.3% | 0.08 |
+| haussier / vol basse | 173 | +42.5% | 1.15 |
+| haussier / vol haute | 92 | +141.8% | 2.55 |
+| range / vol basse | 205 | +61.0% | 1.29 |
+| range / vol haute | 31 | +8.1% | 0.86 |
 
 ### H - Trend diversifie BTC/ETH/SOL
 
@@ -149,10 +149,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -3.4% | -0.62 |
 | baissier / vol haute | 134 | -9.4% | -1.62 |
-| haussier / vol basse | 169 | +0.9% | 0.16 |
-| haussier / vol haute | 93 | +111.7% | 2.98 |
-| range / vol basse | 207 | +17.0% | 0.72 |
-| range / vol haute | 32 | -35.1% | -2.88 |
+| haussier / vol basse | 173 | +5.7% | 0.34 |
+| haussier / vol haute | 92 | +100.1% | 2.77 |
+| range / vol basse | 205 | +17.7% | 0.74 |
+| range / vol haute | 31 | -34.3% | -2.74 |
 
 ### Reference - Buy & hold equipondere BTC/ETH/SOL
 
@@ -160,10 +160,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | +4.0% | 0.30 |
 | baissier / vol haute | 134 | -31.2% | -0.16 |
-| haussier / vol basse | 169 | +2.2% | 0.29 |
-| haussier / vol haute | 93 | +518.3% | 3.49 |
-| range / vol basse | 207 | -4.0% | 0.26 |
-| range / vol haute | 32 | -87.4% | -2.93 |
+| haussier / vol basse | 173 | +10.6% | 0.45 |
+| haussier / vol haute | 92 | +455.6% | 3.30 |
+| range / vol basse | 205 | -3.4% | 0.27 |
+| range / vol haute | 31 | -87.3% | -2.86 |
 
 ### I - Momentum top 3 sur 11 cryptos
 
@@ -171,10 +171,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -21.7% | -1.10 |
 | baissier / vol haute | 134 | -10.5% | -0.73 |
-| haussier / vol basse | 169 | +6.1% | 0.34 |
-| haussier / vol haute | 93 | +211.9% | 3.46 |
-| range / vol basse | 207 | -11.5% | -0.16 |
-| range / vol haute | 32 | -2.8% | -0.28 |
+| haussier / vol basse | 173 | +5.5% | 0.33 |
+| haussier / vol haute | 92 | +212.4% | 3.45 |
+| range / vol basse | 205 | -13.0% | -0.20 |
+| range / vol haute | 31 | +4.1% | 0.51 |
 
 ### J - Rotation G + filtre de financement
 
@@ -182,10 +182,10 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -30.9% | -2.10 |
 | baissier / vol haute | 134 | -2.6% | -0.13 |
-| haussier / vol basse | 169 | +25.4% | 0.80 |
-| haussier / vol haute | 93 | +110.9% | 2.47 |
-| range / vol basse | 207 | +44.3% | 1.04 |
-| range / vol haute | 32 | +0.3% | 0.08 |
+| haussier / vol basse | 173 | +24.5% | 0.79 |
+| haussier / vol haute | 92 | +112.6% | 2.48 |
+| range / vol basse | 205 | +46.2% | 1.07 |
+| range / vol haute | 31 | +8.1% | 0.86 |
 
 ### K - Panier G + H + E
 
@@ -193,8 +193,8 @@ Hors echantillon (gate) : a partir du 2024-10-02. Gate : Sharpe > 1.5, max DD > 
 |---|---|---|---|
 | baissier / vol basse | 96 | -14.1% | -1.44 |
 | baissier / vol haute | 134 | -6.4% | -0.82 |
-| haussier / vol basse | 169 | +14.7% | 0.62 |
-| haussier / vol haute | 93 | +131.3% | 2.92 |
-| range / vol basse | 207 | +22.4% | 0.82 |
-| range / vol haute | 32 | +8.9% | 0.86 |
+| haussier / vol basse | 173 | +20.2% | 0.79 |
+| haussier / vol haute | 92 | +118.4% | 2.73 |
+| range / vol basse | 205 | +22.9% | 0.84 |
+| range / vol haute | 31 | +14.5% | 1.34 |
 
